@@ -1,0 +1,90 @@
+package com.nexus.adapters.cli;
+
+import com.nexus.adapters.cli.commands.*;
+import org.springframework.stereotype.Component;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.Spec;
+
+import java.io.File;
+import java.util.concurrent.Callable;
+
+/**
+ * Root Picocli command defining global CLI options and registering subcommands.
+ */
+@Component
+@Command(
+    name = "nexus",
+    description = "Nexus: Cross-Platform Host Management Agent",
+    version = "Nexus 1.0.0-SNAPSHOT",
+    mixinStandardHelpOptions = true,
+    subcommands = {
+        InfoCommand.class,
+        UptimeCommand.class,
+        CpuCommand.class,
+        MemoryCommand.class,
+        DiskCommand.class,
+        ProcessCommand.class,
+        NetworkCommand.class,
+        ServicesCommand.class,
+        CapabilitiesCommand.class,
+        StatusCommand.class,
+        StartCommand.class,
+        StopCommand.class,
+        ConfigCommand.class,
+        UpdateCommand.class,
+        UninstallCommand.class,
+        TailscaleCommand.class,
+        RebootCommand.class,
+        PoweroffCommand.class,
+        com.nexus.adapters.cli.commands.TmuxCommand.class,
+        com.nexus.adapters.cli.commands.ZfsCommand.class
+    }
+)
+public class NexusCliRootCommand implements Callable<Integer> {
+
+    @Spec
+    private CommandSpec spec;
+
+    @Option(names = {"-j", "--json"}, description = "Format output as machine-readable JSON", scope = picocli.CommandLine.ScopeType.INHERIT)
+    private boolean json;
+
+    @Option(names = {"-v", "--verbose"}, description = "Enable verbose debug output", scope = picocli.CommandLine.ScopeType.INHERIT)
+    private boolean verbose;
+
+    @Option(names = {"-c", "--config"}, description = "Path to custom configuration file", scope = picocli.CommandLine.ScopeType.INHERIT)
+    private File configFile;
+
+    public boolean isJson() {
+        return json;
+    }
+
+    public boolean isVerbose() {
+        return verbose;
+    }
+
+    public File getConfigFile() {
+        if (configFile == null) {
+            String resolved = com.nexus.config.NexusConfigResolver.getResolvedConfigPath();
+            if (resolved != null) {
+                return new File(resolved);
+            }
+        }
+        return configFile;
+    }
+
+    public void reset() {
+        this.json = false;
+        this.verbose = false;
+        this.configFile = null;
+    }
+
+    @Override
+    public Integer call() {
+        if (spec != null) {
+            spec.commandLine().usage(spec.commandLine().getOut());
+        }
+        return 0;
+    }
+}

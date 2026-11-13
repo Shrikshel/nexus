@@ -1,0 +1,31 @@
+# ==============================================================================
+# Nexus Host Management Agent Configuration
+# ==============================================================================
+
+nexus:
+  # Mode of operation: "cli" (single execution) or "daemon" (persistent service)
+  mode: "cli"
+
+  # Maximum execution time allowed for any capability invocation before cancellation
+  default-timeout: 30s
+
+  # Enable structured file audit logging (logs/nexus-audit.log)
+  audit-enabled: true
+
+  # Remote Telegram Bot Integration
+  telegram:
+    # Set to true to enable Telegram inbound commands and outbound alerting
+    enabled: false
+
+    # Telegram bot token obtained from @BotFather
+    bot-token: "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+
+    # Authorized Telegram Chat ID (rejects all requests originating from other chats)
+    allowed-chat-id: 123456789
+
+# Logging Levels
+logging:
+  level:
+    root: WARN
+    com.nexus: INFO
+    AUDIT: INFO

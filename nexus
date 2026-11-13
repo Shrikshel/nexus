@@ -1,0 +1,26 @@
+#!/bin/sh
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+NATIVE_BIN="$SCRIPT_DIR/target/nexus"
+JAR_FILE="$SCRIPT_DIR/target/nexus-1.0.0-SNAPSHOT.jar"
+
+# If native binary exists and NEXUS_USE_NATIVE is set, or if jar is missing but native exists
+if [ "$NEXUS_USE_NATIVE" = "true" ] && [ -x "$NATIVE_BIN" ]; then
+    exec "$NATIVE_BIN" "$@"
+fi
+
+if [ ! -f "$JAR_FILE" ]; then
+    if [ -x "$NATIVE_BIN" ]; then
+        exec "$NATIVE_BIN" "$@"
+    fi
+    echo "Nexus jar not found. Building..."
+    (cd "$SCRIPT_DIR" && ./mvnw package -DskipTests)
+fi
+
+JAVA_CMD="java"
+if [ -n "$JAVA_HOME" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+    JAVA_CMD="$JAVA_HOME/bin/java"
+elif [ -x "/usr/lib/jvm/java-17-openjdk-amd64/bin/java" ]; then
+    JAVA_CMD="/usr/lib/jvm/java-17-openjdk-amd64/bin/java"
+fi
+
+exec "$JAVA_CMD" -jar "$JAR_FILE" "$@"
