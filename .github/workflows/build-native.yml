@@ -135,7 +135,7 @@ jobs:
 
       - name: Resolve Release Version & Metadata
         run: |
-          POM_VERSION="$(sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p' pom.xml | head -n 1 | tr -d ' ')"
+          POM_VERSION="$(awk '/<\/parent>/ {found=1} found && /<version>/ {gsub(/.*<version>|<\/version>.*/, ""); print; exit}' pom.xml 2>/dev/null || true)"
           echo "POM_VERSION=$POM_VERSION" >> $GITHUB_ENV
 
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
@@ -188,8 +188,16 @@ jobs:
             NEXT_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}-SNAPSHOT"
             echo "Auto-bumping snapshot version: $POM_VERSION -> $NEXT_VERSION"
 
-            # Update pom.xml
-            sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>$NEXT_VERSION<\/version>/" pom.xml
+            # Update pom.xml project version
+            python3 -c "
+            import re
+            with open('pom.xml', 'r') as f:
+                content = f.read()
+            pattern = r'(</parent>[\s\S]*?<artifactId>nexus</artifactId>\s*<version>)(.*?)(</version>)'
+            new_content = re.sub(pattern, rf'\g<1>$NEXT_VERSION\g<3>', content, count=1)
+            with open('pom.xml', 'w') as f:
+                f.write(new_content)
+            "
 
             # Update NexusUpdateService.java
             sed -i "s/public static final String CURRENT_VERSION = \".*\";/public static final String CURRENT_VERSION = \"$NEXT_VERSION\";/" src/main/java/com/nexus/platform/NexusUpdateService.java

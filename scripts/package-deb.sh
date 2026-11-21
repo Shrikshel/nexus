@@ -31,7 +31,7 @@ error() { printf "${RED}[ERROR]${NC} %s\n" "$1" >&2; exit 1; }
 # Determine version (argument 1, or auto-detect from pom.xml)
 POM_VER=""
 if [ -z "$1" ] && [ -f "pom.xml" ]; then
-    POM_VER="$(sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p' pom.xml | head -n 1 | tr -d ' ')"
+    POM_VER="$(awk '/<\/parent>/ {found=1} found && /<version>/ {gsub(/.*<version>|<\/version>.*/, ""); print; exit}' pom.xml 2>/dev/null || true)"
 fi
 VERSION="${1:-${POM_VER:-0.0.1-SNAPSHOT}}"
 ARCH="amd64"
