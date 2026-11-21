@@ -203,13 +203,33 @@ main() {
             fi
 
             info "Downloading $BINARY_NAME from GitHub repository '$REPO'..."
-            if ! download_file "$DOWNLOAD_URL" "$DOWNLOAD_PATH"; then
+            DOWNLOAD_SUCCESS=0
+            if download_file "$DOWNLOAD_URL" "$DOWNLOAD_PATH" 2>/dev/null; then
+                DOWNLOAD_SUCCESS=1
+            else
+                # Fallback: Query GitHub public releases API to resolve the newest tag (including pre-releases/snapshots)
+                DISCOVERED_TAG="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases" 2>/dev/null | grep '"tag_name":' | head -n 1 | tr -d ' ",' | cut -d: -f2 || true)"
+                if [ -n "$DISCOVERED_TAG" ]; then
+                    FALLBACK_URL="https://github.com/${REPO}/releases/download/${DISCOVERED_TAG}/${BINARY_NAME}"
+                    CHECKSUM_URL="https://github.com/${REPO}/releases/download/${DISCOVERED_TAG}/SHA256SUMS.txt"
+                    info "Discovered release tag '$DISCOVERED_TAG'. Retrying download from $FALLBACK_URL..."
+                    if download_file "$FALLBACK_URL" "$DOWNLOAD_PATH" 2>/dev/null; then
+                        DOWNLOAD_SUCCESS=1
+                    fi
+                fi
+            fi
+
+            if [ "$DOWNLOAD_SUCCESS" != "1" ]; then
                 # If download fails, check if a local build exists as fallback
                 if [ -f "./target/nexus${EXT}" ]; then
                     warn "Remote download failed, but local build found at ./target/nexus${EXT}. Falling back to local build..."
                     cp "./target/nexus${EXT}" "$DOWNLOAD_PATH"
                 else
-                    error "Failed to download $BINARY_NAME from $DOWNLOAD_URL.\nIf repository is private, pass GITHUB_TOKEN='your_token'.\nIf building from source, run: ./mvnw -Pnative package -DskipTests && ./scripts/install.sh --local"
+                    error "Failed to download $BINARY_NAME from $DOWNLOAD_URL.
+Possible reasons:
+1. GitHub Actions is still building the release assets for the latest commit (GraalVM native compilation takes ~4-6 minutes). Check status: https://github.com/${REPO}/actions
+2. No releases have been published yet on https://github.com/${REPO}/releases
+3. For local installations, run: ./mvnw -Pnative package -DskipTests && ./scripts/install.sh --local"
                 fi
             fi
         fi
