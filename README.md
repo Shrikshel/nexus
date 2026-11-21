@@ -79,7 +79,7 @@ Nexus binaries are compiled ahead-of-time using GraalVM Native Image into standa
 Install or update the latest pre-compiled standalone native binary directly with a single command:
 
 ```bash
-curl -sL https://raw.githubusercontent.com/Shrikshel/nexus/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/install.sh | bash
 ```
 
 > **What the installer does automatically:**
@@ -93,11 +93,11 @@ curl -sL https://raw.githubusercontent.com/Shrikshel/nexus/master/scripts/instal
 #### Installer Customization
 You can pass environment variables or CLI flags to customize installation:
 ```bash
-# Install a specific release version (e.g., v1.0.0)
-curl -sL https://raw.githubusercontent.com/Shrikshel/nexus/master/scripts/install.sh | VERSION=v1.0.0 bash
+# Install a specific release version or snapshot (e.g., v0.0.1-SNAPSHOT or v1.0.0)
+curl -fsSL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/install.sh | VERSION=v0.0.1-SNAPSHOT bash
 
 # Install to a custom directory (e.g., ~/bin or /opt/nexus)
-curl -sL https://raw.githubusercontent.com/Shrikshel/nexus/master/scripts/install.sh | INSTALL_DIR="$HOME/bin" bash
+curl -fsSL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/install.sh | INSTALL_DIR="$HOME/bin" bash
 ```
 
 ---
@@ -203,7 +203,7 @@ sudo nexus uninstall -y --all
 # Run local or remote uninstaller script
 sudo ./scripts/uninstall.sh -y
 # Or via curl:
-curl -sL https://raw.githubusercontent.com/Shrikshel/nexus/master/scripts/uninstall.sh | sudo bash -s -- -y
+curl -fsSL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/uninstall.sh | sudo bash -s -- -y
 ```
 
 ---

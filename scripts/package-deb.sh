@@ -28,7 +28,12 @@ success() { printf "${GREEN}[SUCCESS]${NC} %s\n" "$1"; }
 warn() { printf "${YELLOW}[WARN]${NC} %s\n" "$1"; }
 error() { printf "${RED}[ERROR]${NC} %s\n" "$1" >&2; exit 1; }
 
-VERSION="${1:-1.0.0}"
+# Determine version (argument 1, or auto-detect from pom.xml)
+POM_VER=""
+if [ -z "$1" ] && [ -f "pom.xml" ]; then
+    POM_VER="$(sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p' pom.xml | head -n 1 | tr -d ' ')"
+fi
+VERSION="${1:-${POM_VER:-0.0.1-SNAPSHOT}}"
 ARCH="amd64"
 PKG_NAME="nexus"
 

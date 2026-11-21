@@ -17,7 +17,7 @@ import java.util.concurrent.Callable;
 @Command(
     name = "nexus",
     description = "Nexus: Cross-Platform Host Management Agent",
-    version = "Nexus 1.0.0-SNAPSHOT",
+    version = "Nexus 0.0.1-SNAPSHOT",
     mixinStandardHelpOptions = true,
     subcommands = {
         InfoCommand.class,

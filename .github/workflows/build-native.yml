@@ -1,15 +1,13 @@
-name: Build GraalVM Native Binaries
+name: Build GraalVM Native Binaries & Release
 
 on:
   push:
     branches:
-      - master
       - main
     tags:
       - 'v*'
   pull_request:
     branches:
-      - master
       - main
   workflow_dispatch:
     inputs:
@@ -111,11 +109,15 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: build-native
-    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == true || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.release == true || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download all built artifacts
         uses: actions/download-artifact@v4
@@ -131,15 +133,78 @@ jobs:
           ls -la release-assets/
           cat release-assets/SHA256SUMS.txt
 
+      - name: Resolve Release Version & Metadata
+        run: |
+          POM_VERSION="$(sed -n 's/.*<version>\(.*\)<\/version>.*/\1/p' pom.xml | head -n 1 | tr -d ' ')"
+          echo "POM_VERSION=$POM_VERSION" >> $GITHUB_ENV
+
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG_NAME="${{ github.ref_name }}"
+            if [[ "$TAG_NAME" == *SNAPSHOT* ]] || [[ "$TAG_NAME" == *snapshot* ]]; then
+              IS_PRERELEASE="true"
+              RELEASE_NAME="Nexus Snapshot $TAG_NAME"
+            else
+              IS_PRERELEASE="false"
+              RELEASE_NAME="Nexus Release $TAG_NAME"
+            fi
+          else
+            TAG_NAME="v${POM_VERSION}"
+            if [[ "$POM_VERSION" == *SNAPSHOT* ]]; then
+              IS_PRERELEASE="true"
+              RELEASE_NAME="Nexus Snapshot v${POM_VERSION}"
+            else
+              IS_PRERELEASE="false"
+              RELEASE_NAME="Nexus Release v${POM_VERSION}"
+            fi
+          fi
+
+          echo "RELEASE_TAG=$TAG_NAME" >> $GITHUB_ENV
+          echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_ENV
+          echo "IS_PRERELEASE=$IS_PRERELEASE" >> $GITHUB_ENV
+          echo "Resolved release metadata: tag=$TAG_NAME, name=$RELEASE_NAME, prerelease=$IS_PRERELEASE"
+
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'latest' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Latest Release (master)' }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: ${{ env.RELEASE_NAME }}
           files: release-assets/*
           generate_release_notes: true
           draft: false
-          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump Snapshot Version for Next Commit
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          POM_VERSION="${{ env.POM_VERSION }}"
+          if [[ "$POM_VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-SNAPSHOT$ ]]; then
+            MAJOR="${BASH_REMATCH[1]}"
+            MINOR="${BASH_REMATCH[2]}"
+            PATCH="${BASH_REMATCH[3]}"
+            NEXT_PATCH=$((PATCH + 1))
+            NEXT_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}-SNAPSHOT"
+            echo "Auto-bumping snapshot version: $POM_VERSION -> $NEXT_VERSION"
+
+            # Update pom.xml
+            sed -i "0,/<version>.*<\/version>/s/<version>.*<\/version>/<version>$NEXT_VERSION<\/version>/" pom.xml
+
+            # Update NexusUpdateService.java
+            sed -i "s/public static final String CURRENT_VERSION = \".*\";/public static final String CURRENT_VERSION = \"$NEXT_VERSION\";/" src/main/java/com/nexus/platform/NexusUpdateService.java
+
+            # Update NexusCliRootCommand.java
+            sed -i "s/version = \"Nexus .*\",/version = \"Nexus $NEXT_VERSION\",/" src/main/java/com/nexus/adapters/cli/NexusCliRootCommand.java
+
+            # Configure Git credentials
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+
+            # Commit and push
+            git add pom.xml src/main/java/com/nexus/platform/NexusUpdateService.java src/main/java/com/nexus/adapters/cli/NexusCliRootCommand.java
+            git commit -m "chore(release): bump snapshot version to $NEXT_VERSION [skip ci]"
+            git push origin main
+          else
+            echo "Version '$POM_VERSION' is a formal release (non-SNAPSHOT). Skipping auto-bump."
+          fi

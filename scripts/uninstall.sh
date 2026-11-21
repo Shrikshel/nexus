@@ -3,7 +3,7 @@
 # Nexus Host Management Agent - One-Line Uninstaller
 #
 # Usage:
-#   curl -sL https://raw.githubusercontent.com/Shrikshel/Nexus/master/scripts/uninstall.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/uninstall.sh | bash
 #
 # Options via environment variables:
 #   PURGE=1         Also delete configuration files and audit logs

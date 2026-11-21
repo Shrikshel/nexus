@@ -1,7 +1,7 @@
 #!/bin/sh
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NATIVE_BIN="$SCRIPT_DIR/target/nexus"
-JAR_FILE="$SCRIPT_DIR/target/nexus-1.0.0-SNAPSHOT.jar"
+JAR_FILE="$(ls "$SCRIPT_DIR/target"/nexus-*.jar 2>/dev/null | grep -v "\.original" | head -n 1 || echo "$SCRIPT_DIR/target/nexus.jar")"
 
 # If native binary exists and NEXUS_USE_NATIVE is set, or if jar is missing but native exists
 if [ "$NEXUS_USE_NATIVE" = "true" ] && [ -x "$NATIVE_BIN" ]; then

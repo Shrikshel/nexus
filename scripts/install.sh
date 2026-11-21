@@ -3,7 +3,7 @@
 # Nexus Host Management Agent - One-Line Installer
 #
 # Usage:
-#   curl -sL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/install.sh | bash
 #
 # Options via environment variables:
 #   REPO="owner/repo"       GitHub repository (default: Shrikshel/nexus)
