@@ -238,7 +238,10 @@ Possible reasons:
         if [ -z "$LOCAL_CANDIDATE" ] && [ "${SKIP_CHECKSUM:-0}" != "1" ]; then
             if download_file "$CHECKSUM_URL" "$CHECKSUM_PATH" 2>/dev/null; then
                 info "Verifying SHA256 checksum..."
-                EXPECTED_HASH="$(grep "$BINARY_NAME" "$CHECKSUM_PATH" | awk '{print $1}' || true)"
+                EXPECTED_HASH="$(awk -v fname="$BINARY_NAME" '$2 == fname || $2 == ("*" fname) {print $1; exit}' "$CHECKSUM_PATH" 2>/dev/null || true)"
+                if [ -z "$EXPECTED_HASH" ]; then
+                    EXPECTED_HASH="$(grep -E "[[:space:]]\*?${BINARY_NAME}$" "$CHECKSUM_PATH" 2>/dev/null | awk '{print $1}' | head -n 1 || true)"
+                fi
                 if [ -n "$EXPECTED_HASH" ]; then
                     if command_exists sha256sum; then
                         ACTUAL_HASH="$(sha256sum "$DOWNLOAD_PATH" | awk '{print $1}')"
