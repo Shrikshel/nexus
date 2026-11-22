@@ -219,44 +219,58 @@ curl -fsSL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/uninst
 ### Run Commands Directly
 Use the included `./nexus` wrapper script (or the compiled native binary `./target/nexus`):
 
-#### 1. Host & Resource Telemetry
+#### 1. Host System & Diagnostic Management (`nexus system` / `nexus sys`)
+All host-level telemetry, package management, hardware health diagnostics, self-audits, and power operations are consolidated under the clean `nexus system` group:
+
 ```bash
-# General help and all available commands
-./nexus --help
+# General help and all system subcommands
+nexus system --help
 
-# System and OS Information
-./nexus info
-./nexus info --json
+# System Package Management (auto-detects APT, DNF, Pacman, Zypper, APK, Brew, Winget)
+nexus system update                     # Refresh package repositories
+nexus system upgrade -y                 # Upgrade installed packages with auto-yes
+nexus system upgrade --dry-run          # Preview packages to be upgraded
+nexus system update-upgrade -y          # Update repositories then upgrade sequentially
 
-# Host & Agent Uptime
-./nexus uptime
+# Comprehensive System Self-Audit
+# Verifies disk capacity thresholds (>85% / >95%), SSD/HDD SMART health, RAM pressure,
+# failed systemd services (systemctl --failed), internet reachability, and agent security
+nexus system audit
+nexus system audit --json
 
-# CPU Utilization and Load Averages (1m, 5m, 15m)
-./nexus cpu
+# Host Hardware & OS Telemetry
+nexus system info                       # Host OS, kernel, arch, memory summary, timezone
+nexus system uptime                     # Host uptime, boot time, and daemon uptime
+nexus system cpu                        # CPU model, core topology, load averages (1m, 5m, 15m)
+nexus system memory                     # Physical RAM and Swap capacity and utilization
+nexus system disk                       # Mounted filesystem storage (filtered to physical drives)
+nexus system smart                      # SSD/HDD SMART health, wear level, TBW, temperatures
+nexus system smart /dev/sda             # Target specific disk drive
+nexus system network                    # Network interfaces, MAC addresses, MTU, IPv4/IPv6
+nexus system process                    # Process table sorted by CPU and memory consumption
+nexus system service                    # Inspect installed system services and runtime states
 
-# Memory (RAM and Swap) Utilization
-./nexus memory
-
-# Running Processes (sorted by CPU/Memory)
-./nexus process list
-
-# Network Interfaces & Assigned IP Addresses
-./nexus network
-
-# Installed System Services (systemd/Launchd/Windows SCM)
-./nexus services
+# Privileged Host Power Management (requires sudo/admin)
+sudo nexus system reboot                # Prompts for confirmation
+sudo nexus system reboot -y -d 10 -r "Scheduled maintenance"
+sudo nexus system poweroff              # Prompts for confirmation
+sudo nexus system poweroff -y -d 5 -r "Maintenance window"
 ```
 
-#### 2. Physical Storage & Drive Telemetry
-```bash
-# Storage and Filesystem Mounts (filtered to physical drives)
-./nexus disk list
-./nexus disk list --json
+#### 2. Nexus Background Daemon Management (`nexus daemon` / `nexus d`)
+Manage the continuous background daemon service providing Telegram bot long-polling, health monitoring, and authenticated local loopback IPC (`127.0.0.1:29786`):
 
-# Physical Drive SMART Telemetry (Privileged)
-# Reports health, TBW, power-on hours, unsafe shutdowns, and error diagnostics
-./nexus disk smart
-./nexus disk smart /dev/sda
+```bash
+# Start the background daemon service (runs in foreground for systemd supervision)
+nexus daemon start
+nexus daemon start -p 29786             # Custom IPC port
+
+# Query daemon operational status and uptime over authenticated loopback IPC
+nexus daemon status
+nexus daemon status --json
+
+# Gracefully stop the running background daemon over IPC
+nexus daemon stop
 ```
 
 #### 3. OpenZFS Storage Management
@@ -314,22 +328,7 @@ sudo ./nexus tailscale down
 ./nexus tmux kill --all
 ```
 
-#### 6. Privileged Host Power Management
-```bash
-# Gracefully restart / reboot host machine (prompts for confirmation)
-sudo ./nexus reboot
-
-# Bypass prompt with -y flag, optional custom delay, and audit reason
-sudo ./nexus reboot -y -d 10 -r "Scheduled kernel update"
-
-# Gracefully shutdown / power off host machine (prompts for confirmation)
-sudo ./nexus poweroff
-
-# Bypass prompt with -y flag
-sudo ./nexus poweroff -y -d 5 -r "Maintenance window"
-```
-
-#### 7. Configuration Management & Live Reloading
+#### 6. Configuration Management & Live Reloading
 ```bash
 # Validate configuration file syntax, tokens, and properties
 nexus config validate
@@ -351,7 +350,7 @@ nexus config show
 nexus config reload
 ```
 
-#### 8. Recurring Timers & Automation Engine (systemd, launchd, Task Scheduler)
+#### 7. Recurring Timers & Automation Engine (systemd, launchd, Task Scheduler)
 Manage cross-platform scheduled tasks with zero root privileges (runs in user mode by default with `systemctl --user`):
 
 ```bash
@@ -391,7 +390,7 @@ Manage cross-platform scheduled tasks with zero root privileges (runs in user mo
 sudo ./nexus timer create root-cleanup --schedule "daily" --system
 ```
 
-#### 9. Native Telegram Notification & Media Dispatching API
+#### 8. Native Telegram Notification & Media Dispatching API
 Send messages, alerts, log files, photos, and stickers directly from the CLI or automation scripts/timers with multi-recipient broadcasting:
 
 ```bash
@@ -427,7 +426,7 @@ nexus telegram send "Deployment started" -r 123456789 -r @devops_broadcast
 nexus --json telegram send "Automated ping"
 ```
 
-#### 10. Capabilities Introspection & Updates
+#### 9. Capabilities Introspection & Updates
 ```bash
 # Introspect all registered capabilities and their RBAC permissions
 ./nexus capabilities list
@@ -452,9 +451,9 @@ Nexus includes a local authenticated IPC server over loopback TCP (port `29786`)
 
 ### Starting the Daemon
 ```bash
-./nexus start
+nexus daemon start
 # Or specify a custom IPC port:
-./nexus start -p 29786
+nexus daemon start -p 29786
 ```
 
 When started, the daemon:
@@ -465,13 +464,13 @@ When started, the daemon:
 ### Querying Daemon Status
 From another terminal window:
 ```bash
-./nexus status
-./nexus status --json
+nexus daemon status
+nexus daemon status --json
 ```
 
 ### Stopping the Daemon
 ```bash
-./nexus stop
+nexus daemon stop
 ```
 
 ---

@@ -20,28 +20,17 @@ import java.util.concurrent.Callable;
     version = "Nexus 0.0.7-SNAPSHOT",
     mixinStandardHelpOptions = true,
     subcommands = {
-        InfoCommand.class,
-        UptimeCommand.class,
-        CpuCommand.class,
-        MemoryCommand.class,
-        DiskCommand.class,
-        ProcessCommand.class,
-        NetworkCommand.class,
-        ServicesCommand.class,
-        CapabilitiesCommand.class,
-        StatusCommand.class,
-        StartCommand.class,
-        StopCommand.class,
-        ConfigCommand.class,
-        UpdateCommand.class,
-        UninstallCommand.class,
-        TailscaleCommand.class,
-        RebootCommand.class,
-        PoweroffCommand.class,
-        com.nexus.adapters.cli.commands.TmuxCommand.class,
-        com.nexus.adapters.cli.commands.ZfsCommand.class,
+        SystemCommand.class,
+        DaemonCommand.class,
         com.nexus.adapters.cli.commands.TimerCommand.class,
-        com.nexus.adapters.cli.commands.TelegramCommand.class
+        com.nexus.adapters.cli.commands.TelegramCommand.class,
+        TailscaleCommand.class,
+        com.nexus.adapters.cli.commands.ZfsCommand.class,
+        com.nexus.adapters.cli.commands.TmuxCommand.class,
+        ConfigCommand.class,
+        CapabilitiesCommand.class,
+        UpdateCommand.class,
+        UninstallCommand.class
     }
 )
 public class NexusCliRootCommand implements Callable<Integer> {

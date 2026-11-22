@@ -21,9 +21,13 @@ import com.nexus.capabilities.storage.dto.DiskListReport;
 import com.nexus.capabilities.storage.dto.DiskPartitionReport;
 import com.nexus.capabilities.storage.dto.SmartReport;
 import com.nexus.capabilities.storage.zfs.dto.*;
+import com.nexus.capabilities.system.audit.dto.AuditCheckItem;
+import com.nexus.capabilities.system.audit.dto.AuditSeverity;
+import com.nexus.capabilities.system.audit.dto.SystemAuditReport;
 import com.nexus.capabilities.system.dto.PowerOperationResult;
 import com.nexus.capabilities.system.dto.SystemInfoReport;
 import com.nexus.capabilities.system.dto.SystemUptimeReport;
+import com.nexus.capabilities.system.package_mgr.dto.PackageOperationResult;
 import com.nexus.capabilities.terminal.tmux.dto.*;
 import com.nexus.core.capability.CapabilityMetadata;
 import com.nexus.core.capability.CapabilityResult;
@@ -138,6 +142,10 @@ public class OutputFormatter {
             renderTimerDelete(report, out);
         } else if (payload instanceof TelegramSendResult report) {
             renderTelegramSend(report, out);
+        } else if (payload instanceof PackageOperationResult report) {
+            renderPackageOperation(report, out);
+        } else if (payload instanceof SystemAuditReport report) {
+            renderSystemAudit(report, out);
         } else {
             try {
                 out.println(objectMapper.writeValueAsString(payload));
@@ -673,6 +681,51 @@ public class OutputFormatter {
         }
         if (r.message() != null && !r.message().isBlank()) {
             out.printf("  Summary: %s%n", r.message());
+        }
+    }
+
+    private void renderPackageOperation(PackageOperationResult r, PrintWriter out) {
+        if (r.success()) {
+            out.printf("\u001B[1;32m✓ System Package %s Succeeded\u001B[0m (Manager: %s, Exit code: %d)%n",
+                    r.action(), r.packageManager(), r.exitCode());
+        } else {
+            out.printf("\u001B[1;31m✖ System Package %s Failed\u001B[0m (Manager: %s, Exit code: %d)%n",
+                    r.action(), r.packageManager(), r.exitCode());
+        }
+        if (r.message() != null && !r.message().isBlank()) {
+            out.println("  " + r.message());
+        }
+        if (r.output() != null && !r.output().isBlank()) {
+            out.println("\n  Output:\n" + r.output().trim());
+        }
+    }
+
+    private void renderSystemAudit(SystemAuditReport r, PrintWriter out) {
+        String badge;
+        if ("HEALTHY".equalsIgnoreCase(r.overallStatus())) {
+            badge = "\u001B[1;32m✓ HEALTHY\u001B[0m";
+        } else if ("WARNING".equalsIgnoreCase(r.overallStatus())) {
+            badge = "\u001B[1;33m⚠ WARNING\u001B[0m";
+        } else {
+            badge = "\u001B[1;31m✖ CRITICAL\u001B[0m";
+        }
+
+        out.printf("\u001B[1;36m=== Nexus System Health & Security Audit ===\u001B[0m [%s]%n", badge);
+        out.printf("  Summary: \u001B[32m%d passed\u001B[0m, \u001B[33m%d warning(s)\u001B[0m, \u001B[31m%d critical\u001B[0m%n%n",
+                r.passedCount(), r.warnCount(), r.criticalCount());
+
+        if (r.checks() != null) {
+            for (AuditCheckItem item : r.checks()) {
+                String symbol = switch (item.severity()) {
+                    case PASS -> "\u001B[32m✓\u001B[0m";
+                    case WARN -> "\u001B[33m⚠\u001B[0m";
+                    case CRITICAL -> "\u001B[31m✖\u001B[0m";
+                };
+                out.printf("  %s \u001B[1m[%s]\u001B[0m %s: %s%n", symbol, item.category(), item.checkName(), item.message());
+                if (item.remediation() != null && !item.remediation().isBlank()) {
+                    out.printf("     \u001B[33m↳ Action:\u001B[0m %s%n", item.remediation());
+                }
+            }
         }
     }
 

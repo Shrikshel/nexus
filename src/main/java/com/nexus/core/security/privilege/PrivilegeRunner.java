@@ -85,7 +85,34 @@ public class PrivilegeRunner {
             "/bin/tmux",
             "/usr/local/bin/tmux",
             "/opt/homebrew/bin/tmux",
-            "tmux"
+            "tmux",
+
+            // Package Managers (Debian/Ubuntu, RHEL/Fedora, Arch, SUSE, Alpine, macOS, Windows)
+            "/usr/bin/apt-get",
+            "/bin/apt-get",
+            "apt-get",
+            "/usr/bin/apt",
+            "/bin/apt",
+            "apt",
+            "/usr/bin/dnf",
+            "dnf",
+            "/usr/bin/yum",
+            "/bin/yum",
+            "yum",
+            "/usr/bin/pacman",
+            "pacman",
+            "/usr/bin/zypper",
+            "zypper",
+            "/sbin/apk",
+            "/usr/bin/apk",
+            "apk",
+            "/opt/homebrew/bin/brew",
+            "/usr/local/bin/brew",
+            "brew",
+            "winget",
+            "winget.exe",
+            "choco",
+            "choco.exe"
     );
 
     public boolean isRoot() {

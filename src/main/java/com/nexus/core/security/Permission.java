@@ -14,6 +14,7 @@ public enum Permission {
     WRITE_SERVICES("Permission to start, stop, or restart system services"),
     WRITE_NETWORK("Permission to configure network settings, Tailscale VPN and routes"),
     POWER_MANAGEMENT("Permission to restart, reboot, or shut down the host machine"),
+    WRITE_PACKAGES("Permission to install, update, and upgrade system packages"),
     EXECUTE_DIAGNOSTICS("Permission to run system diagnostics and log sweeps"),
     ADMIN_ALL("Superuser administrative access across all capabilities");
 

@@ -74,7 +74,9 @@ public class DaemonIpcServer {
             this.authToken = generateSecureToken();
             writeRuntimeFiles(authToken);
 
-            serverSocket = new ServerSocket(port, 10, InetAddress.getByName("127.0.0.1"));
+            serverSocket = new ServerSocket();
+            serverSocket.setReuseAddress(true);
+            serverSocket.bind(new java.net.InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 10);
             log.info("Local IPC server listening on 127.0.0.1:{}", port);
 
             serverExecutor = Executors.newCachedThreadPool(r -> {

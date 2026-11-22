@@ -30,13 +30,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus info outputs formatted system information")
+    @DisplayName("nexus system info outputs formatted system information")
     void testInfoCommand() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("info");
+        int exitCode = cmd.execute("system", "info");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -46,13 +46,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus info --json outputs structured JSON report")
+    @DisplayName("nexus system info --json outputs structured JSON report")
     void testInfoCommandJson() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("info", "--json");
+        int exitCode = cmd.execute("system", "info", "--json");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -62,13 +62,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus uptime outputs formatted uptime duration")
+    @DisplayName("nexus system uptime outputs formatted uptime duration")
     void testUptimeCommand() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("uptime");
+        int exitCode = cmd.execute("system", "uptime");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -110,13 +110,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus disk list displays filesystem mounts table")
+    @DisplayName("nexus system disk displays filesystem mounts table")
     void testDiskListCommand() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("disk", "list");
+        int exitCode = cmd.execute("system", "disk");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -126,13 +126,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus disk list --json displays structured JSON")
+    @DisplayName("nexus system disk --json displays structured JSON")
     void testDiskListCommandJson() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("disk", "list", "--json");
+        int exitCode = cmd.execute("system", "disk", "--json");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -141,13 +141,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus cpu displays CPU cores and load")
+    @DisplayName("nexus system cpu displays CPU cores and load")
     void testCpuCommand() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("cpu");
+        int exitCode = cmd.execute("system", "cpu");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -156,13 +156,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus memory displays RAM utilization")
+    @DisplayName("nexus system memory displays RAM utilization")
     void testMemoryCommand() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("memory");
+        int exitCode = cmd.execute("system", "memory");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -171,13 +171,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus process list displays process table")
+    @DisplayName("nexus system process displays process table")
     void testProcessListCommand() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("process", "list");
+        int exitCode = cmd.execute("system", "process");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -186,13 +186,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus network displays interfaces")
+    @DisplayName("nexus system network displays interfaces")
     void testNetworkCommand() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("network");
+        int exitCode = cmd.execute("system", "network");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -200,13 +200,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus services displays service list")
+    @DisplayName("nexus system service displays service list")
     void testServicesCommand() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("services");
+        int exitCode = cmd.execute("system", "service");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -214,13 +214,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus status displays daemon status")
+    @DisplayName("nexus daemon status displays daemon status")
     void testStatusCommand() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("status");
+        int exitCode = cmd.execute("daemon", "status");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -243,13 +243,13 @@ class CliIntegrationTest {
     }
 
     @Test
-    @DisplayName("nexus info displays host timezone and localized timestamp")
+    @DisplayName("nexus system info displays host timezone and localized timestamp")
     void testHostTimezoneDisplayed() {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
         CommandLine cmd = createCommandLine(out, err);
 
-        int exitCode = cmd.execute("info");
+        int exitCode = cmd.execute("system", "info");
 
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
@@ -403,5 +403,101 @@ class CliIntegrationTest {
         assertThat(output).contains("Usage: nexus telegram send");
         assertThat(output).contains("--recipient");
         assertThat(output).contains("--caption");
+    }
+
+    @Test
+    @DisplayName("nexus system displays available subcommands")
+    void testSystemHelpCommand() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("system", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus system");
+        assertThat(output).contains("update");
+        assertThat(output).contains("upgrade");
+        assertThat(output).contains("info");
+        assertThat(output).contains("audit");
+        assertThat(output).contains("disk");
+    }
+
+    @Test
+    @DisplayName("nexus daemon displays available subcommands")
+    void testDaemonHelpCommand() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("daemon", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus daemon");
+        assertThat(output).contains("start");
+        assertThat(output).contains("stop");
+        assertThat(output).contains("status");
+    }
+
+    @Test
+    @DisplayName("nexus system audit runs self audit successfully")
+    void testSystemAuditCommand() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("system", "audit");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("=== Nexus System Health & Security Audit ===");
+        assertThat(output).contains("Summary:");
+    }
+
+    @Test
+    @DisplayName("nexus system audit --json outputs structured audit report")
+    void testSystemAuditCommandJson() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("system", "audit", "--json");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("\"capabilityId\" : \"sys.audit\"");
+        assertThat(output).contains("\"overallStatus\"");
+    }
+
+    @Test
+    @DisplayName("nexus system update --help displays options")
+    void testSystemUpdateHelp() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("system", "update", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus system update");
+    }
+
+    @Test
+    @DisplayName("nexus system upgrade --help displays options")
+    void testSystemUpgradeHelp() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("system", "upgrade", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus system upgrade");
+        assertThat(output).contains("--dry-run");
+        assertThat(output).contains("--yes");
     }
 }
