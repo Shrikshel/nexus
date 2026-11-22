@@ -390,6 +390,13 @@ class CliIntegrationTest {
     }
 
     @Test
+    @DisplayName("Nexus root command registers aliases nx, n, nxs, nexux")
+    void testRootCommandAliases() {
+        CommandLine cmd = new CommandLine(rootCommand, factory);
+        assertThat(cmd.getCommandSpec().aliases()).containsExactly("nx", "n", "nxs", "nexux");
+    }
+
+    @Test
     @DisplayName("nexus telegram send displays usage options")
     void testTelegramSendHelpCommand() {
         StringWriter out = new StringWriter();

@@ -111,10 +111,12 @@ public class UninstallCommand implements Callable<Integer> {
         if (binaryPath != null) {
             searchLocations.add(binaryPath.toAbsolutePath().normalize());
         }
-        searchLocations.add(Path.of("/usr/local/bin/nexus"));
-        searchLocations.add(Path.of("/usr/bin/nexus"));
-        searchLocations.add(Path.of(System.getProperty("user.home"), ".local", "bin", "nexus"));
-        searchLocations.add(Path.of(System.getProperty("user.home"), "bin", "nexus"));
+        for (String bin : java.util.List.of("nexus", "nx", "n", "nxs", "nexux")) {
+            searchLocations.add(Path.of("/usr/local/bin", bin));
+            searchLocations.add(Path.of("/usr/bin", bin));
+            searchLocations.add(Path.of(System.getProperty("user.home"), ".local", "bin", bin));
+            searchLocations.add(Path.of(System.getProperty("user.home"), "bin", bin));
+        }
 
         for (Path p : searchLocations) {
             if (p != null && Files.exists(p)) {

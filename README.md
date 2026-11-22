@@ -217,7 +217,22 @@ curl -fsSL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/uninst
 ```
 
 ### Run Commands Directly
-Use the included `./nexus` wrapper script (or the compiled native binary `./target/nexus`):
+Use the included `./nexus` wrapper script (or the compiled native binary `./target/nexus`).
+
+#### Command Aliases
+For fast and convenient command line invocation, Nexus supports short command aliases:
+- `nx` (recommended short alias)
+- `n` (ultra-compact alias)
+- `nxs`
+- `nexux`
+
+Any command can be invoked interchangeably with `nexus`, `nx`, or `n`:
+```bash
+nx system info
+n timer list
+nx system audit
+n daemon status
+```
 
 #### 1. Host System & Diagnostic Management (`nexus system` / `nexus sys`)
 All host-level telemetry, package management, hardware health diagnostics, self-audits, and power operations are consolidated under the clean `nexus system` group:

@@ -169,9 +169,14 @@ done
 
 # 3. Locate and remove ALL executable instances
 ALL_CANDIDATE_BINS="/usr/local/bin/nexus /usr/bin/nexus $HOME/.local/bin/nexus $HOME/bin/nexus"
-if command_exists which; then
-    ALL_CANDIDATE_BINS="$ALL_CANDIDATE_BINS $(which -a nexus 2>/dev/null || true)"
-fi
+for ALIAS in nx n nxs nexux; do
+    ALL_CANDIDATE_BINS="$ALL_CANDIDATE_BINS /usr/local/bin/$ALIAS /usr/bin/$ALIAS $HOME/.local/bin/$ALIAS $HOME/bin/$ALIAS"
+done
+for CMD in nexus nx n nxs nexux; do
+    if command_exists which; then
+        ALL_CANDIDATE_BINS="$ALL_CANDIDATE_BINS $(which -a $CMD 2>/dev/null || true)"
+    fi
+done
 
 for BIN in $ALL_CANDIDATE_BINS; do
     if [ -f "$BIN" ] || [ -L "$BIN" ]; then

@@ -68,6 +68,9 @@ mkdir -p "$BUILD_DIR/etc/nexus"
 # 2. Copy binary
 cp "$BINARY_SRC" "$BUILD_DIR/usr/local/bin/nexus"
 chmod 755 "$BUILD_DIR/usr/local/bin/nexus"
+for ALIAS in nx n nxs nexux; do
+    ln -sf nexus "$BUILD_DIR/usr/local/bin/$ALIAS"
+done
 
 # 3. Create default configuration template
 cat <<'EOF' > "$BUILD_DIR/etc/nexus/config.yml"
@@ -133,6 +136,9 @@ cat <<'EOF' > "$BUILD_DIR/DEBIAN/postinst"
 #!/bin/sh
 set -e
 chmod +x /usr/local/bin/nexus 2>/dev/null || true
+for ALIAS in nx n nxs nexux; do
+    ln -sf /usr/local/bin/nexus "/usr/local/bin/$ALIAS" 2>/dev/null || true
+done
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload 2>/dev/null || true
 fi

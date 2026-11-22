@@ -16,6 +16,7 @@ import java.util.concurrent.Callable;
 @Component
 @Command(
     name = "nexus",
+    aliases = {"nx", "n", "nxs", "nexux"},
     description = "Nexus: Cross-Platform Host Management Agent",
     version = "Nexus 0.0.7-SNAPSHOT",
     mixinStandardHelpOptions = true,

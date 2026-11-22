@@ -324,6 +324,17 @@ Possible reasons:
 
     success "Installed nexus successfully to $INSTALL_TARGET"
 
+    # Create convenience symlinks for command aliases (nx, n, nxs, nexux)
+    for ALIAS in nx n nxs nexux; do
+        ALIAS_TARGET="$TARGET_DIR/$ALIAS"
+        if [ -w "$TARGET_DIR" ]; then
+            ln -sf "$INSTALL_TARGET" "$ALIAS_TARGET"
+        elif command_exists sudo; then
+            sudo ln -sf "$INSTALL_TARGET" "$ALIAS_TARGET"
+        fi
+    done
+    success "Configured command aliases: nx, n, nxs, nexux -> $INSTALL_TARGET"
+
     # PATH warning if installing to non-standard user directory
     case ":$PATH:" in
         *":$TARGET_DIR:"*) ;;
