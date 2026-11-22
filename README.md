@@ -273,19 +273,30 @@ sudo nexus system poweroff -y -d 5 -r "Maintenance window"
 ```
 
 #### 2. Nexus Background Daemon Management (`nexus daemon` / `nexus d`)
-Manage the continuous background daemon service providing Telegram bot long-polling, health monitoring, and authenticated local loopback IPC (`127.0.0.1:29786`):
+Natively manages the OS background service supervisor (Linux `systemd`, macOS `launchd`, Windows `Task Scheduler`) providing 24/7 Telegram bot polling, health monitoring, and authenticated local loopback IPC (`127.0.0.1:29786`):
 
 ```bash
-# Start the background daemon service (runs in foreground for systemd supervision)
-nexus daemon start
-nexus daemon start -p 29786             # Custom IPC port
+# Install and enable the daemon background service (does NOT start immediately)
+nexus daemon install                    # User scope: zero-root (~/.config/systemd/user/nexus.service)
+sudo nexus daemon install --system      # System scope: multi-user (/etc/systemd/system/nexus.service)
 
-# Query daemon operational status and uptime over authenticated loopback IPC
+# Start the background daemon service (automatically ensures enabled; fails if not installed)
+nexus daemon start                      # Runs headlessly under systemd/launchd
+nexus daemon start --foreground         # Run directly in foreground terminal for debugging
+
+# Query supervisor and IPC operational status
 nexus daemon status
 nexus daemon status --json
 
-# Gracefully stop the running background daemon over IPC
+# Enable or disable auto-start on host boot
+nexus daemon enable                     # Auto-start on boot
+nexus daemon disable                    # Disable auto-start on boot
+
+# Gracefully stop the running background daemon (via supervisor or IPC)
 nexus daemon stop
+
+# Completely uninstall daemon service and remove supervisor unit files
+nexus daemon uninstall
 ```
 
 #### 3. OpenZFS Storage Management
@@ -460,33 +471,31 @@ sudo nexus uninstall -y --all
 
 ---
 
-## Daemon Mode & Local Authenticated IPC
+## Daemon Mode & OS Service Supervision
 
-Nexus includes a local authenticated IPC server over loopback TCP (port `29786`).
+Nexus runs headlessly as a native OS background service (Linux `systemd`, macOS `launchd`, Windows Task Scheduler) with a local authenticated IPC server over loopback TCP (port `29786`).
 
-### Starting the Daemon
+### Installing & Managing the Background Service
 ```bash
+# 1. Install and register the service (zero root required in user scope)
+nexus daemon install
+
+# 2. Start the headless background daemon
 nexus daemon start
-# Or specify a custom IPC port:
-nexus daemon start -p 29786
+
+# 3. Check status (supervisor state + live IPC)
+nexus daemon status
+
+# 4. Stop or disable
+nexus daemon stop
+nexus daemon disable
 ```
 
-When started, the daemon:
+When running, the daemon:
 1. Generates an ephemeral cryptographically secure 256-bit token stored in `~/.nexus/nexus.token` (or `/tmp/nexus-$USER/nexus.token`) with `0600` file permissions.
 2. Starts the background telemetry engine and Telegram long-polling (if configured).
 3. Listens on loopback `127.0.0.1:29786` for authenticated client commands.
-
-### Querying Daemon Status
-From another terminal window:
-```bash
-nexus daemon status
-nexus daemon status --json
-```
-
-### Stopping the Daemon
-```bash
-nexus daemon stop
-```
+4. Restarts automatically on crash or host reboot under the OS supervisor.
 
 ---
 

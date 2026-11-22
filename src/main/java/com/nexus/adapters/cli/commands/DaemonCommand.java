@@ -6,6 +6,9 @@ import com.nexus.adapters.ipc.DaemonIpcServer;
 import com.nexus.adapters.telegram.TelegramBotAdapter;
 import com.nexus.config.NexusConfigResolver;
 import com.nexus.config.NexusProperties;
+import com.nexus.platform.service.DaemonServiceManager;
+import com.nexus.platform.service.ServiceOperationResult;
+import com.nexus.platform.service.ServiceStatusDetails;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -19,17 +22,22 @@ import java.io.PrintWriter;
 import java.util.concurrent.Callable;
 
 /**
- * CLI command group for managing the Nexus background daemon service (start, stop, status).
+ * CLI command group for managing the Nexus background daemon service and supervisor integration
+ * (install, enable, disable, start, stop, status, uninstall).
  */
 @Component
 @Command(
     name = "daemon",
     aliases = {"d"},
-    description = "Manage the Nexus background daemon service (start, stop, status)",
+    description = "Manage the Nexus background daemon service (install, enable, disable, start, stop, status, uninstall)",
     subcommands = {
+        DaemonCommand.InstallSubcommand.class,
+        DaemonCommand.EnableSubcommand.class,
+        DaemonCommand.DisableSubcommand.class,
         DaemonCommand.StartSubcommand.class,
         DaemonCommand.StopSubcommand.class,
-        DaemonCommand.StatusSubcommand.class
+        DaemonCommand.StatusSubcommand.class,
+        DaemonCommand.UninstallSubcommand.class
     },
     mixinStandardHelpOptions = true
 )
@@ -44,15 +52,18 @@ public class DaemonCommand implements Callable<Integer> {
     private final DaemonIpcClient ipcClient;
     private final TelegramBotAdapter telegramBotAdapter;
     private final NexusProperties properties;
+    private final DaemonServiceManager serviceManager;
 
     public DaemonCommand(DaemonIpcServer ipcServer,
                          DaemonIpcClient ipcClient,
                          TelegramBotAdapter telegramBotAdapter,
-                         NexusProperties properties) {
+                         NexusProperties properties,
+                         DaemonServiceManager serviceManager) {
         this.ipcServer = ipcServer;
         this.ipcClient = ipcClient;
         this.telegramBotAdapter = telegramBotAdapter;
         this.properties = properties;
+        this.serviceManager = serviceManager;
     }
 
     public DaemonIpcServer getIpcServer() {
@@ -71,6 +82,10 @@ public class DaemonCommand implements Callable<Integer> {
         return properties;
     }
 
+    public DaemonServiceManager getServiceManager() {
+        return serviceManager;
+    }
+
     @Override
     public Integer call() {
         if (spec != null) {
@@ -79,10 +94,128 @@ public class DaemonCommand implements Callable<Integer> {
         return 0;
     }
 
+    // 1. INSTALL
+    @Component
+    @Command(
+        name = "install",
+        aliases = {"setup"},
+        description = "Installs and enables the Nexus daemon as an OS background service (systemd/launchd/TaskScheduler)",
+        mixinStandardHelpOptions = true
+    )
+    public static class InstallSubcommand implements Callable<Integer> {
+        @Spec
+        private CommandSpec spec;
+
+        @ParentCommand
+        private DaemonCommand parent;
+
+        @Option(names = {"--system"}, description = "Install as system-wide service (requires root/sudo)")
+        private boolean systemScope;
+
+        @Option(names = {"--no-enable"}, description = "Do not enable service at boot")
+        private boolean noEnable;
+
+        @Override
+        public Integer call() {
+            PrintWriter out = spec.commandLine().getOut();
+            PrintWriter err = spec.commandLine().getErr();
+
+            ServiceOperationResult res = parent.getServiceManager().installService(systemScope, !noEnable);
+            if (!res.success()) {
+                err.println("\u001B[31mFailed to install daemon service: " + res.message() + "\u001B[0m");
+                return 1;
+            }
+
+            out.println("\u001B[32m✓ Nexus daemon service successfully installed" + (!noEnable ? " and enabled" : "") + "!\u001B[0m");
+            out.println("  • Service Name:  " + res.serviceName());
+            out.println("  • Unit Path:     " + res.unitPath());
+            out.println("  • Scope:         " + (systemScope ? "system (multi-user)" : "user (zero-root user scope)"));
+            out.println("  • Status:        " + (!noEnable ? "Installed & Enabled (Stopped)" : "Installed (Disabled)"));
+            out.println("");
+            out.println("  👉 Start the background daemon anytime using:");
+            out.println("     nexus daemon start" + (systemScope ? " --system" : ""));
+
+            if (parent.getServiceManager().isLingerAdvised(systemScope)) {
+                String user = System.getProperty("user.name");
+                out.println("");
+                out.println("  💡 Tip: To allow the user service to persist after SSH logout on Linux, enable lingering:");
+                out.println("     sudo loginctl enable-linger " + user);
+            }
+            return 0;
+        }
+    }
+
+    // 2. ENABLE
+    @Component
+    @Command(
+        name = "enable",
+        description = "Enables the Nexus daemon service to auto-start on boot",
+        mixinStandardHelpOptions = true
+    )
+    public static class EnableSubcommand implements Callable<Integer> {
+        @Spec
+        private CommandSpec spec;
+
+        @ParentCommand
+        private DaemonCommand parent;
+
+        @Option(names = {"--system"}, description = "Target system-wide service (requires root/sudo)")
+        private boolean systemScope;
+
+        @Override
+        public Integer call() {
+            PrintWriter out = spec.commandLine().getOut();
+            PrintWriter err = spec.commandLine().getErr();
+
+            ServiceOperationResult res = parent.getServiceManager().enableService(systemScope);
+            if (res.success()) {
+                out.println("\u001B[32m✓ " + res.message() + "\u001B[0m");
+                return 0;
+            } else {
+                err.println("\u001B[31m" + res.message() + "\u001B[0m");
+                return 1;
+            }
+        }
+    }
+
+    // 3. DISABLE
+    @Component
+    @Command(
+        name = "disable",
+        description = "Disables the Nexus daemon service from auto-starting on boot",
+        mixinStandardHelpOptions = true
+    )
+    public static class DisableSubcommand implements Callable<Integer> {
+        @Spec
+        private CommandSpec spec;
+
+        @ParentCommand
+        private DaemonCommand parent;
+
+        @Option(names = {"--system"}, description = "Target system-wide service (requires root/sudo)")
+        private boolean systemScope;
+
+        @Override
+        public Integer call() {
+            PrintWriter out = spec.commandLine().getOut();
+            PrintWriter err = spec.commandLine().getErr();
+
+            ServiceOperationResult res = parent.getServiceManager().disableService(systemScope);
+            if (res.success()) {
+                out.println("\u001B[32m✓ " + res.message() + "\u001B[0m");
+                return 0;
+            } else {
+                err.println("\u001B[31m" + res.message() + "\u001B[0m");
+                return 1;
+            }
+        }
+    }
+
+    // 4. START
     @Component
     @Command(
         name = "start",
-        description = "Starts the Nexus background daemon service with Telegram and IPC enabled",
+        description = "Starts the Nexus background daemon service (or in foreground with -f)",
         mixinStandardHelpOptions = true
     )
     public static class StartSubcommand implements Callable<Integer> {
@@ -93,6 +226,12 @@ public class DaemonCommand implements Callable<Integer> {
         @ParentCommand
         private DaemonCommand parent;
 
+        @Option(names = {"-f", "--foreground"}, description = "Run daemon directly in the foreground (blocking)")
+        private boolean foreground;
+
+        @Option(names = {"--system"}, description = "Target system-wide service (requires root/sudo)")
+        private boolean systemScope;
+
         @Option(names = {"-p", "--port"}, description = "Local IPC port", defaultValue = "29786")
         private int port;
 
@@ -100,12 +239,47 @@ public class DaemonCommand implements Callable<Integer> {
         public Integer call() {
             PrintWriter out = spec.commandLine().getOut();
             PrintWriter err = spec.commandLine().getErr();
+
+            // When NOT foreground, manage as an OS background service
+            if (!foreground) {
+                if (!parent.getServiceManager().isServiceInstalled(systemScope)) {
+                    err.println("\u001B[31mError: Nexus daemon service is not installed.\u001B[0m");
+                    err.println("  👉 Run 'nexus daemon install" + (systemScope ? " --system" : "") + "' first to install and enable the background service.");
+                    err.println("  👉 Or use 'nexus daemon start --foreground' to run directly in this terminal session.");
+                    return 1;
+                }
+
+                // Ensure service is enabled
+                if (!parent.getServiceManager().isServiceEnabled(systemScope)) {
+                    parent.getServiceManager().enableService(systemScope);
+                }
+
+                ServiceOperationResult res = parent.getServiceManager().startService(systemScope);
+                if (res.success()) {
+                    out.println("\u001B[32m✓ Started Nexus daemon service in background (" + res.serviceName() + ")\u001B[0m");
+                    out.println("  • Status:      RUNNING (headless background service)");
+                    out.println("  • Supervisor:  " + parent.getServiceManager().getActiveProvider().getPlatformName());
+                    out.println("  • Scope:       " + (systemScope ? "system" : "user"));
+                    out.println("  • Telegram:    ACTIVE (polling commands)");
+                    out.println("  • Local IPC:   127.0.0.1:" + port);
+                    out.println("");
+                    out.println("  ℹ Inspect live logs: " + parent.getServiceManager().getLogGuidance(systemScope));
+                    out.println("  ℹ Query status:      nexus daemon status" + (systemScope ? " --system" : ""));
+                    out.println("  ℹ Stop daemon:       nexus daemon stop" + (systemScope ? " --system" : ""));
+                    return 0;
+                } else {
+                    err.println("\u001B[31mFailed to start daemon service: " + res.message() + "\u001B[0m");
+                    return 1;
+                }
+            }
+
+            // Foreground mode (used by systemd ExecStart or direct debugging)
             DaemonIpcServer srv = parent.getIpcServer();
             TelegramBotAdapter tgAdapter = parent.getTelegramBotAdapter();
             NexusProperties props = parent.getProperties();
 
             try {
-                out.println("\u001B[1;36mStarting Nexus Host Management Daemon...\u001B[0m");
+                out.println("\u001B[1;36mStarting Nexus Host Management Daemon (foreground)...\u001B[0m");
 
                 String configPath = NexusConfigResolver.getResolvedConfigPath();
                 if (configPath != null) {
@@ -168,6 +342,7 @@ public class DaemonCommand implements Callable<Integer> {
         }
     }
 
+    // 5. STOP
     @Component
     @Command(
         name = "stop",
@@ -182,22 +357,39 @@ public class DaemonCommand implements Callable<Integer> {
         @ParentCommand
         private DaemonCommand parent;
 
+        @Option(names = {"--system"}, description = "Target system-wide service (requires root/sudo)")
+        private boolean systemScope;
+
         @Override
         public Integer call() {
             PrintWriter out = spec.commandLine().getOut();
             PrintWriter err = spec.commandLine().getErr();
+            boolean stopped = false;
 
+            // 1. Try stopping through supervisor service if installed
+            if (parent.getServiceManager().isServiceInstalled(systemScope)) {
+                ServiceOperationResult res = parent.getServiceManager().stopService(systemScope);
+                if (res.success()) {
+                    out.println("\u001B[32m✓ " + res.message() + " (" + res.serviceName() + ")\u001B[0m");
+                    stopped = true;
+                }
+            }
+
+            // 2. Try sending shutdown command over loopback IPC
             try {
                 String response = parent.getIpcClient().sendCommand("STOP", DaemonIpcServer.DEFAULT_PORT);
-                out.println("\u001B[32m✓ Sent shutdown command to Nexus daemon: " + response + "\u001B[0m");
-                return 0;
-            } catch (Exception e) {
-                err.println("\u001B[31mFailed to stop daemon: " + e.getMessage() + "\u001B[0m");
-                return 1;
+                out.println("\u001B[32m✓ Sent shutdown command to Nexus daemon via IPC: " + response + "\u001B[0m");
+                stopped = true;
+            } catch (Exception ignored) {}
+
+            if (!stopped) {
+                out.println("  ℹ Nexus daemon is not currently running or already stopped.");
             }
+            return 0;
         }
     }
 
+    // 6. STATUS
     @Component
     @Command(
         name = "status",
@@ -212,30 +404,70 @@ public class DaemonCommand implements Callable<Integer> {
         @ParentCommand
         private DaemonCommand parent;
 
+        @Option(names = {"--system"}, description = "Target system-wide service (requires root/sudo)")
+        private boolean systemScope;
+
         @Override
         public Integer call() {
             PrintWriter out = spec.commandLine().getOut();
             PrintWriter err = spec.commandLine().getErr();
             boolean json = isJsonRequested(spec);
 
+            ServiceStatusDetails details = parent.getServiceManager().getServiceStatus(systemScope);
+            String ipcStatusJson = null;
             try {
-                String jsonStatus = parent.getIpcClient().sendCommand("STATUS", DaemonIpcServer.DEFAULT_PORT);
-                if (json) {
-                    out.println(jsonStatus);
-                } else {
-                    out.println("\u001B[1;36m=== Nexus Daemon Status ===\u001B[0m");
-                    out.println("  State: \u001B[32mRUNNING\u001B[0m");
-                    out.println("  " + jsonStatus);
+                ipcStatusJson = parent.getIpcClient().sendCommand("STATUS", DaemonIpcServer.DEFAULT_PORT);
+            } catch (Exception ignored) {}
+
+            if (json) {
+                out.printf("{\"serviceInstalled\":%b,\"serviceEnabled\":%b,\"serviceRunning\":%b,\"platform\":\"%s\",\"scope\":\"%s\",\"ipcRunning\":%b}%n",
+                        details.installed(), details.enabled(), details.running(), details.platform(),
+                        systemScope ? "system" : "user", ipcStatusJson != null);
+            } else {
+                out.println("\u001B[1;36m=== Nexus Daemon Status ===\u001B[0m");
+                out.println("  Supervisor Service : " + details.serviceName() + " (" + details.platform() + ", " + (systemScope ? "system" : "user") + " scope)");
+                out.println("  Service Installed  : " + (details.installed() ? "\u001B[32mYES\u001B[0m (" + details.unitPath() + ")" : "\u001B[33mNO (run 'nexus daemon install')\u001B[0m"));
+                out.println("  Service Enabled    : " + (details.enabled() ? "\u001B[32mYES (auto-starts on boot)\u001B[0m" : "\u001B[33mNO\u001B[0m"));
+                out.println("  Service State      : " + (details.running() ? "\u001B[32m" + details.stateDescription() + "\u001B[0m" : "\u001B[31m" + details.stateDescription() + "\u001B[0m"));
+                out.println("  Daemon IPC         : " + (ipcStatusJson != null ? "\u001B[32mRUNNING\u001B[0m (127.0.0.1:" + DaemonIpcServer.DEFAULT_PORT + ")" : "\u001B[31mOFFLINE\u001B[0m"));
+                if (ipcStatusJson != null) {
+                    out.println("  " + ipcStatusJson);
                 }
+            }
+            return 0;
+        }
+    }
+
+    // 7. UNINSTALL
+    @Component
+    @Command(
+        name = "uninstall",
+        aliases = {"remove"},
+        description = "Uninstalls the Nexus daemon background service and removes unit files",
+        mixinStandardHelpOptions = true
+    )
+    public static class UninstallSubcommand implements Callable<Integer> {
+        @Spec
+        private CommandSpec spec;
+
+        @ParentCommand
+        private DaemonCommand parent;
+
+        @Option(names = {"--system"}, description = "Target system-wide service (requires root/sudo)")
+        private boolean systemScope;
+
+        @Override
+        public Integer call() {
+            PrintWriter out = spec.commandLine().getOut();
+            PrintWriter err = spec.commandLine().getErr();
+
+            ServiceOperationResult res = parent.getServiceManager().uninstallService(systemScope);
+            if (res.success()) {
+                out.println("\u001B[32m✓ " + res.message() + " (" + res.serviceName() + ")\u001B[0m");
                 return 0;
-            } catch (Exception e) {
-                if (json) {
-                    out.println("{\"status\":\"STOPPED\",\"error\":\"" + e.getMessage() + "\"}");
-                } else {
-                    out.println("\u001B[1;36m=== Nexus Daemon Status ===\u001B[0m");
-                    out.println("  State: \u001B[31mSTOPPED\u001B[0m (Daemon is not running or IPC unreachable)");
-                }
-                return 0;
+            } else {
+                err.println("\u001B[31m" + res.message() + "\u001B[0m");
+                return 1;
             }
         }
     }

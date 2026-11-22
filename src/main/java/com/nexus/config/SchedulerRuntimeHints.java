@@ -12,6 +12,8 @@ import com.nexus.capabilities.system.package_mgr.dto.PackageOperationRequest;
 import com.nexus.capabilities.system.package_mgr.dto.PackageOperationResult;
 import com.nexus.platform.packagemanager.PackageManagerType;
 import com.nexus.platform.scheduler.TimerStateManager;
+import com.nexus.platform.service.ServiceOperationResult;
+import com.nexus.platform.service.ServiceStatusDetails;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
@@ -44,7 +46,9 @@ public class SchedulerRuntimeHints implements RuntimeHintsRegistrar {
                 PackageManagerType.class,
                 AuditSeverity.class,
                 AuditCheckItem.class,
-                SystemAuditReport.class
+                SystemAuditReport.class,
+                ServiceOperationResult.class,
+                ServiceStatusDetails.class
         };
 
         for (Class<?> clazz : reflectionClasses) {

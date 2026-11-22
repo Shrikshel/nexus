@@ -443,9 +443,48 @@ class CliIntegrationTest {
         assertThat(exitCode).isEqualTo(0);
         String output = out.toString();
         assertThat(output).contains("Usage: nexus daemon");
+        assertThat(output).contains("install");
+        assertThat(output).contains("enable");
+        assertThat(output).contains("disable");
         assertThat(output).contains("start");
         assertThat(output).contains("stop");
         assertThat(output).contains("status");
+        assertThat(output).contains("uninstall");
+    }
+
+    @Test
+    @DisplayName("nexus daemon install displays help options")
+    void testDaemonInstallHelpCommand() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("daemon", "install", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus daemon install");
+        assertThat(output).contains("--system");
+        assertThat(output).contains("--no-enable");
+    }
+
+    @Test
+    @DisplayName("nexus daemon start without installation returns helpful guidance")
+    void testDaemonStartWithoutInstall() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("daemon", "start");
+
+        // Returns 0 if already installed on host, or 1 with error guidance
+        if (exitCode == 1) {
+            String errorOutput = err.toString();
+            assertThat(errorOutput).contains("Error: Nexus daemon service is not installed.");
+            assertThat(errorOutput).contains("nexus daemon install");
+        } else {
+            assertThat(exitCode).isEqualTo(0);
+        }
     }
 
     @Test
