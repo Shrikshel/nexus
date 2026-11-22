@@ -18,7 +18,7 @@ import java.util.concurrent.Callable;
     name = "nexus",
     aliases = {"nx", "n", "nxs", "nexux"},
     description = "Nexus: Cross-Platform Host Management Agent",
-    version = "Nexus 0.0.8-SNAPSHOT",
+    version = "Nexus 0.0.9-SNAPSHOT",
     mixinStandardHelpOptions = true,
     subcommands = {
         SystemCommand.class,
