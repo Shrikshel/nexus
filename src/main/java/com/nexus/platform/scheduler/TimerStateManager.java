@@ -39,6 +39,12 @@ public class TimerStateManager {
             int nextSequence,
             Map<String, TimerRecord> timers
     ) {
+        public StateFile {
+            if (timers == null) {
+                timers = new LinkedHashMap<>();
+            }
+        }
+
         public StateFile() {
             this(1, new LinkedHashMap<>());
         }
@@ -78,7 +84,10 @@ public class TimerStateManager {
         Path path = getStateFilePath(scope);
         if (Files.exists(path)) {
             try {
-                return objectMapper.readValue(path.toFile(), StateFile.class);
+                StateFile sf = objectMapper.readValue(path.toFile(), StateFile.class);
+                if (sf != null) {
+                    return new StateFile(sf.nextSequence(), sf.timers() != null ? sf.timers() : new LinkedHashMap<>());
+                }
             } catch (Exception e) {
                 log.warn("Could not read timer state file at {}: {}. Auto-healing...", path, e.getMessage());
             }
@@ -192,13 +201,15 @@ public class TimerStateManager {
         return Optional.empty();
     }
 
-    private int scanFilesystemMaxSequence(TimerScope scope) {
-        Path dir;
+    protected Path resolveUnitDirectory(TimerScope scope) {
         if (scope == TimerScope.SYSTEM) {
-            dir = Path.of("/etc/systemd/system");
-        } else {
-            dir = Path.of(System.getProperty("user.home"), ".config", "systemd", "user");
+            return Path.of("/etc/systemd/system");
         }
+        return Path.of(System.getProperty("user.home"), ".config", "systemd", "user");
+    }
+
+    private int scanFilesystemMaxSequence(TimerScope scope) {
+        Path dir = resolveUnitDirectory(scope);
         if (!Files.exists(dir)) {
             return 0;
         }

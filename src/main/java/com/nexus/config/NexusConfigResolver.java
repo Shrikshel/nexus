@@ -46,6 +46,9 @@ public final class NexusConfigResolver {
             
                 # Authorized Telegram Chat ID (only messages from this ID will be accepted)
                 allowed-chat-id: 0
+
+                # Default recipients for outgoing alerts & messages (user IDs, channel IDs, or @usernames)
+                recipients: []
             """;
 
     private static final List<String> DEFAULT_CONFIG_LOCATIONS = List.of(
@@ -210,6 +213,20 @@ public final class NexusConfigResolver {
                             tg.setAllowedChatId(Long.parseLong(String.valueOf(val).trim()));
                         }
                     } catch (Exception ignored) {}
+                }
+                if (tgMap.containsKey("recipients")) {
+                    Object recVal = tgMap.get("recipients");
+                    java.util.List<String> list = new java.util.ArrayList<>();
+                    if (recVal instanceof java.util.List<?> recList) {
+                        for (Object item : recList) {
+                            if (item != null && !String.valueOf(item).isBlank()) {
+                                list.add(String.valueOf(item).trim());
+                            }
+                        }
+                    } else if (recVal != null && !String.valueOf(recVal).isBlank()) {
+                        list.add(String.valueOf(recVal).trim());
+                    }
+                    tg.setRecipients(list);
                 }
             }
 

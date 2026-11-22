@@ -158,7 +158,10 @@ public class LinuxSystemdTimerProvider implements ScheduledTaskProvider {
     @Override
     public List<TimerInfo> listTimers(TimerScope scope) {
         TimerStateManager.StateFile state = stateManager.loadState(scope);
-        Map<String, TimerStateManager.TimerRecord> recorded = new LinkedHashMap<>(state.timers());
+        Map<String, TimerStateManager.TimerRecord> recorded = new LinkedHashMap<>();
+        if (state != null && state.timers() != null) {
+            recorded.putAll(state.timers());
+        }
 
         // Also discover any nexus-nx*.timer files on filesystem not in state
         Path unitDir = resolveUnitDirectory(scope);

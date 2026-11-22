@@ -8,6 +8,8 @@ import com.nexus.capabilities.network.dto.NetworkInterfaceInfo;
 import com.nexus.capabilities.network.dto.NetworkReport;
 import com.nexus.capabilities.network.tailscale.dto.TailscaleOperationResult;
 import com.nexus.capabilities.network.tailscale.dto.TailscaleStatusReport;
+import com.nexus.capabilities.network.telegram.dto.TelegramRecipientResult;
+import com.nexus.capabilities.network.telegram.dto.TelegramSendResult;
 import com.nexus.capabilities.process.dto.ProcessInfo;
 import com.nexus.capabilities.process.dto.ProcessListReport;
 import com.nexus.capabilities.resource.dto.CpuReport;
@@ -134,6 +136,8 @@ public class OutputFormatter {
             renderTimerRun(report, out);
         } else if (payload instanceof TimerDeleteResult report) {
             renderTimerDelete(report, out);
+        } else if (payload instanceof TelegramSendResult report) {
+            renderTelegramSend(report, out);
         } else {
             try {
                 out.println(objectMapper.writeValueAsString(payload));
@@ -647,6 +651,29 @@ public class OutputFormatter {
         out.printf("  • Timer Unit Deleted:   %s%n", r.deletedTimerUnit() ? "Yes" : "No");
         out.printf("  • Service Unit Deleted: %s%n", r.deletedServiceUnit() ? "Yes" : "No");
         out.printf("  • Script File Deleted:  %s%n", r.deletedScript() ? "Yes" : "Preserved");
+    }
+
+    private void renderTelegramSend(TelegramSendResult r, PrintWriter out) {
+        if (r.success()) {
+            out.printf("\u001B[1;32m✓ Telegram Notification Dispatched\u001B[0m (%d sent, %d failed)%n",
+                    r.sentCount(), r.failedCount());
+        } else {
+            out.printf("\u001B[1;31m✖ Telegram Notification Dispatch Failed\u001B[0m (%d sent, %d failed)%n",
+                    r.sentCount(), r.failedCount());
+        }
+        if (r.deliveries() != null && !r.deliveries().isEmpty()) {
+            for (TelegramRecipientResult d : r.deliveries()) {
+                if (d.success()) {
+                    String msgInfo = d.messageId() != null ? " (message #" + d.messageId() + ")" : "";
+                    out.printf("  \u001B[32m✓\u001B[0m Delivered to %s%s%n", d.recipient(), msgInfo);
+                } else {
+                    out.printf("  \u001B[31m✖\u001B[0m Failed to %s: %s%n", d.recipient(), d.errorMessage());
+                }
+            }
+        }
+        if (r.message() != null && !r.message().isBlank()) {
+            out.printf("  Summary: %s%n", r.message());
+        }
     }
 
     private String formatBytes(long bytes) {

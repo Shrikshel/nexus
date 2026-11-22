@@ -54,6 +54,7 @@ public class NexusProperties {
         private boolean enabled = false;
         private String botToken;
         private Long allowedChatId;
+        private java.util.List<String> recipients = new java.util.ArrayList<>();
 
         public boolean isEnabled() {
             return enabled;
@@ -77,6 +78,29 @@ public class NexusProperties {
 
         public void setAllowedChatId(Long allowedChatId) {
             this.allowedChatId = allowedChatId;
+        }
+
+        public java.util.List<String> getRecipients() {
+            return recipients;
+        }
+
+        public void setRecipients(java.util.List<String> recipients) {
+            this.recipients = recipients != null ? recipients : new java.util.ArrayList<>();
+        }
+
+        public java.util.List<String> getAllResolvedRecipients() {
+            java.util.Set<String> set = new java.util.LinkedHashSet<>();
+            if (allowedChatId != null && allowedChatId != 0) {
+                set.add(String.valueOf(allowedChatId));
+            }
+            if (recipients != null) {
+                for (String r : recipients) {
+                    if (r != null && !r.isBlank()) {
+                        set.add(r.trim());
+                    }
+                }
+            }
+            return new java.util.ArrayList<>(set);
         }
     }
 }

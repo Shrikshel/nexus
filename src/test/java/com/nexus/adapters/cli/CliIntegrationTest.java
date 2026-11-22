@@ -373,4 +373,35 @@ class CliIntegrationTest {
         assertThat(output).contains("\"capabilityId\" : \"timer.list\"");
         assertThat(output).contains("\"status\" : \"SUCCESS\"");
     }
+
+    @Test
+    @DisplayName("nexus telegram displays usage information")
+    void testTelegramHelpCommand() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("telegram", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus telegram");
+        assertThat(output).contains("send");
+    }
+
+    @Test
+    @DisplayName("nexus telegram send displays usage options")
+    void testTelegramSendHelpCommand() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("telegram", "send", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus telegram send");
+        assertThat(output).contains("--recipient");
+        assertThat(output).contains("--caption");
+    }
 }

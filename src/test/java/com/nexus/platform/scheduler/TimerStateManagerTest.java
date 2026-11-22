@@ -26,6 +26,11 @@ class TimerStateManagerTest {
             public Path getStateFilePath(TimerScope scope) {
                 return tempDir.resolve("state").resolve("timers.json");
             }
+
+            @Override
+            protected Path resolveUnitDirectory(TimerScope scope) {
+                return tempDir.resolve("units");
+            }
         };
     }
 

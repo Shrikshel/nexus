@@ -391,13 +391,50 @@ Manage cross-platform scheduled tasks with zero root privileges (runs in user mo
 sudo ./nexus timer create root-cleanup --schedule "daily" --system
 ```
 
-#### 9. Capabilities Introspection & Updates
+#### 9. Native Telegram Notification & Media Dispatching API
+Send messages, alerts, log files, photos, and stickers directly from the CLI or automation scripts/timers with multi-recipient broadcasting:
+
+```bash
+# Broadcast a text alert to all configured recipients (server.yaml)
+nexus telegram send "Nightly backup completed successfully!"
+
+# Pipe text output or logs directly into Telegram using '-'
+cat /var/log/syslog | grep -i "error" | nexus telegram send -
+uptime | nexus telegram send -
+
+# Upload and dispatch files, logs, or documents (auto-detects document vs photo)
+nexus telegram send file /var/log/nginx/error.log --caption "Production Nginx Errors"
+nexus telegram send --file report.pdf --caption "Monthly Host Report"
+
+# Upload and send images / snapshots
+nexus telegram send photo /tmp/dashboard.png --caption "System metrics dashboard"
+nexus telegram send --photo /var/backup/snapshot.jpg
+
+# Send Telegram stickers (by local .webp file or Telegram file_id)
+nexus telegram send sticker CAACAgIAAxkBAAI...
+nexus telegram send --sticker animated_alert.tgs
+
+# Send silently without sound notifications
+nexus telegram send "Nightly disk scrub started" -s
+
+# Custom formatting (HTML, Markdown, MarkdownV2)
+nexus telegram send "<b>CRITICAL:</b> Disk utilization reached <i>95%</i>" --format html
+
+# Override target recipients dynamically (accepts numeric user IDs, group IDs, or @channel_handles)
+nexus telegram send "Deployment started" -r 123456789 -r @devops_broadcast
+
+# Machine-readable JSON output for integrations
+nexus --json telegram send "Automated ping"
+```
+
+#### 10. Capabilities Introspection & Updates
 ```bash
 # Introspect all registered capabilities and their RBAC permissions
 ./nexus capabilities list
 ./nexus capabilities describe sys.info
 ./nexus capabilities describe net.tailscale.up
 ./nexus capabilities describe zfs.pool.status
+./nexus capabilities describe telegram.send
 
 # Check for new GitHub Releases
 nexus update --check
@@ -443,13 +480,16 @@ From another terminal window:
 
 Nexus supports full bi-directional Telegram management.
 
-### Configuration (`application.yml` or `config.yml`)
+### Configuration (`server.yaml` or `application.yml`)
 ```yaml
 nexus:
   telegram:
     enabled: true
     bot-token: "123456789:ABCDefGhIJKlmNoPQRsTUVwxyZ"
     allowed-chat-id: 987654321
+    recipients:
+      - 987654321
+      - "@devops_channel"
 ```
 
 ### Inbound Commands

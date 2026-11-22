@@ -114,10 +114,15 @@ public class ConfigCommand implements Callable<Integer> {
                     valid = false;
                 }
 
-                if (tg.getAllowedChatId() != 0) {
+                if (tg.getAllowedChatId() != null && tg.getAllowedChatId() != 0) {
                     out.printf("  ✓ Telegram allowed chat : %d%n", tg.getAllowedChatId());
                 } else {
                     out.println("  ⚠ Telegram allowed chat : NOT SET (0) - all incoming messages will be rejected");
+                }
+                if (!tg.getAllResolvedRecipients().isEmpty()) {
+                    out.printf("  ✓ Telegram recipients   : %s%n", String.join(", ", tg.getAllResolvedRecipients()));
+                } else {
+                    out.println("  ℹ Telegram recipients   : None configured (messages require explicit --chat-id)");
                 }
             } else {
                 out.println("  ℹ Telegram bot status   : DISABLED");

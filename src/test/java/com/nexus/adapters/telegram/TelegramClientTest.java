@@ -49,4 +49,16 @@ class TelegramClientTest {
         assertThat(TelegramClient.splitMessage(null, 4000)).isEmpty();
         assertThat(TelegramClient.splitMessage("   ", 4000)).isEmpty();
     }
+
+    @Test
+    @DisplayName("MIME type detection identifies standard file extensions correctly")
+    void testDetectMimeType() {
+        assertThat(TelegramClient.detectMimeType(java.nio.file.Path.of("photo.jpg"))).isEqualTo("image/jpeg");
+        assertThat(TelegramClient.detectMimeType(java.nio.file.Path.of("image.PNG"))).isEqualTo("image/png");
+        assertThat(TelegramClient.detectMimeType(java.nio.file.Path.of("document.pdf"))).isEqualTo("application/pdf");
+        assertThat(TelegramClient.detectMimeType(java.nio.file.Path.of("data.json"))).isEqualTo("application/json");
+        assertThat(TelegramClient.detectMimeType(java.nio.file.Path.of("archive.zip"))).isEqualTo("application/zip");
+        assertThat(TelegramClient.detectMimeType(java.nio.file.Path.of("unknown.xyz"))).isEqualTo("application/octet-stream");
+        assertThat(TelegramClient.detectMimeType(null)).isEqualTo("application/octet-stream");
+    }
 }

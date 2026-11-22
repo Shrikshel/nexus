@@ -6,15 +6,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Lightweight, resilient Telegram Bot API client using standard JDK HttpClient.
@@ -46,29 +48,41 @@ public class TelegramClient {
         this.apiBaseUrl = apiBaseUrl;
     }
 
+    public record TelegramSendResponse(boolean success, Long messageId, String error) {}
+
     /**
-     * Sends an HTML-formatted message to the specified chat.
-     * Long messages exceeding 4000 characters are automatically split into sequential chunks.
+     * Sends an HTML-formatted message to the specified chat ID.
+     * Preserved for backward compatibility.
      */
     public boolean sendMessage(String botToken, long chatId, String htmlText) {
+        TelegramSendResponse resp = sendMessage(botToken, String.valueOf(chatId), htmlText, "HTML", false);
+        return resp.success();
+    }
+
+    /**
+     * Sends a text message to a specific recipient (numeric ID or channel username @channel).
+     * Long messages exceeding 4000 characters are automatically split into sequential chunks.
+     */
+    public TelegramSendResponse sendMessage(String botToken, String chatId, String text, String parseMode, boolean disableNotification) {
         if (botToken == null || botToken.isBlank()) {
             log.warn("Cannot send Telegram message: botToken is not configured");
-            return false;
+            return new TelegramSendResponse(false, null, "Bot token is not configured");
         }
 
-        if (htmlText == null || htmlText.isBlank()) {
-            return false;
+        if (text == null || text.isBlank()) {
+            return new TelegramSendResponse(false, null, "Message text is empty");
         }
 
-        List<String> chunks = splitMessage(htmlText, MAX_MESSAGE_CHUNK_SIZE);
-        boolean allSuccess = true;
+        List<String> chunks = splitMessage(text, MAX_MESSAGE_CHUNK_SIZE);
+        Long lastMessageId = null;
 
         for (int i = 0; i < chunks.size(); i++) {
             String chunk = chunks.get(i);
-            boolean sent = sendSingleMessage(botToken, chatId, chunk);
-            if (!sent) {
-                allSuccess = false;
+            TelegramSendResponse sent = sendSingleMessage(botToken, chatId, chunk, parseMode, disableNotification);
+            if (!sent.success()) {
+                return sent;
             }
+            lastMessageId = sent.messageId();
 
             if (chunks.size() > 1 && i < chunks.size() - 1) {
                 try {
@@ -80,40 +94,206 @@ public class TelegramClient {
             }
         }
 
-        return allSuccess;
+        return new TelegramSendResponse(true, lastMessageId, null);
     }
 
-    private boolean sendSingleMessage(String botToken, long chatId, String chunk) {
+    private TelegramSendResponse sendSingleMessage(String botToken, String chatId, String chunk, String parseMode, boolean disableNotification) {
         try {
             String url = String.format("%s/bot%s/sendMessage", apiBaseUrl, botToken);
-            String payload = objectMapper.writeValueAsString(Map.of(
-                    "chat_id", chatId,
-                    "text", chunk,
-                    "parse_mode", "HTML"
-            ));
+            Map<String, Object> payloadMap = new LinkedHashMap<>();
+            payloadMap.put("chat_id", chatId);
+            payloadMap.put("text", chunk);
+            if (parseMode != null && !parseMode.equalsIgnoreCase("NONE") && !parseMode.equalsIgnoreCase("PLAIN")) {
+                payloadMap.put("parse_mode", parseMode);
+            }
+            if (disableNotification) {
+                payloadMap.put("disable_notification", true);
+            }
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Content-Type", "application/json")
                     .timeout(Duration.ofSeconds(15))
-                    .POST(HttpRequest.BodyPublishers.ofString(payload))
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payloadMap)))
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() == 200) {
-                return true;
-            } else {
-                log.warn("Telegram sendMessage returned status {}: {}", response.statusCode(), response.body());
-                return false;
-            }
+            return parseApiResponse(response.statusCode(), response.body());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("Telegram sendMessage interrupted");
-            return false;
+            return new TelegramSendResponse(false, null, "Telegram sendMessage interrupted");
         } catch (Exception e) {
             log.error("Telegram sendMessage failed: {}", e.getMessage());
-            return false;
+            return new TelegramSendResponse(false, null, e.getMessage());
         }
+    }
+
+    /**
+     * Uploads and sends a photo / image file to Telegram.
+     */
+    public TelegramSendResponse sendPhoto(String botToken, String chatId, Path photoPath, String caption, String parseMode, boolean disableNotification) {
+        if (botToken == null || botToken.isBlank()) {
+            return new TelegramSendResponse(false, null, "Bot token is not configured");
+        }
+        if (photoPath == null || !Files.exists(photoPath)) {
+            return new TelegramSendResponse(false, null, "Photo file not found: " + photoPath);
+        }
+
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("chat_id", chatId);
+        if (caption != null && !caption.isBlank()) fields.put("caption", caption);
+        if (parseMode != null && !parseMode.equalsIgnoreCase("NONE") && !parseMode.equalsIgnoreCase("PLAIN")) {
+            fields.put("parse_mode", parseMode);
+        }
+        if (disableNotification) fields.put("disable_notification", "true");
+
+        String url = String.format("%s/bot%s/sendPhoto", apiBaseUrl, botToken);
+        return executeMultipart(url, fields, "photo", photoPath, detectMimeType(photoPath));
+    }
+
+    /**
+     * Uploads and sends a generic document or file to Telegram.
+     */
+    public TelegramSendResponse sendDocument(String botToken, String chatId, Path documentPath, String caption, String parseMode, boolean disableNotification) {
+        if (botToken == null || botToken.isBlank()) {
+            return new TelegramSendResponse(false, null, "Bot token is not configured");
+        }
+        if (documentPath == null || !Files.exists(documentPath)) {
+            return new TelegramSendResponse(false, null, "Document file not found: " + documentPath);
+        }
+
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("chat_id", chatId);
+        if (caption != null && !caption.isBlank()) fields.put("caption", caption);
+        if (parseMode != null && !parseMode.equalsIgnoreCase("NONE") && !parseMode.equalsIgnoreCase("PLAIN")) {
+            fields.put("parse_mode", parseMode);
+        }
+        if (disableNotification) fields.put("disable_notification", "true");
+
+        String url = String.format("%s/bot%s/sendDocument", apiBaseUrl, botToken);
+        return executeMultipart(url, fields, "document", documentPath, detectMimeType(documentPath));
+    }
+
+    /**
+     * Sends a sticker (either a local .webp file or a Telegram sticker file_id) to Telegram.
+     */
+    public TelegramSendResponse sendSticker(String botToken, String chatId, String stickerFileOrId, boolean disableNotification) {
+        if (botToken == null || botToken.isBlank()) {
+            return new TelegramSendResponse(false, null, "Bot token is not configured");
+        }
+        if (stickerFileOrId == null || stickerFileOrId.isBlank()) {
+            return new TelegramSendResponse(false, null, "Sticker file or ID not provided");
+        }
+
+        Path localPath = Path.of(stickerFileOrId);
+        if (Files.exists(localPath)) {
+            Map<String, String> fields = new LinkedHashMap<>();
+            fields.put("chat_id", chatId);
+            if (disableNotification) fields.put("disable_notification", "true");
+            String url = String.format("%s/bot%s/sendSticker", apiBaseUrl, botToken);
+            return executeMultipart(url, fields, "sticker", localPath, detectMimeType(localPath));
+        } else {
+            try {
+                String url = String.format("%s/bot%s/sendSticker", apiBaseUrl, botToken);
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("chat_id", chatId);
+                body.put("sticker", stickerFileOrId);
+                if (disableNotification) body.put("disable_notification", true);
+
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("Content-Type", "application/json")
+                        .timeout(Duration.ofSeconds(15))
+                        .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                        .build();
+
+                HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+                return parseApiResponse(resp.statusCode(), resp.body());
+            } catch (Exception e) {
+                return new TelegramSendResponse(false, null, e.getMessage());
+            }
+        }
+    }
+
+    private TelegramSendResponse executeMultipart(String url, Map<String, String> fields, String fileField, Path filePath, String mimeType) {
+        try {
+            String boundary = "----NexusTelegram" + UUID.randomUUID().toString().replace("-", "");
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] boundaryBytes = ("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8);
+
+            for (Map.Entry<String, String> entry : fields.entrySet()) {
+                if (entry.getValue() != null && !entry.getValue().isBlank()) {
+                    baos.write(boundaryBytes);
+                    String header = "Content-Disposition: form-data; name=\"" + entry.getKey() + "\"\r\n\r\n";
+                    baos.write(header.getBytes(StandardCharsets.UTF_8));
+                    baos.write(entry.getValue().getBytes(StandardCharsets.UTF_8));
+                    baos.write("\r\n".getBytes(StandardCharsets.UTF_8));
+                }
+            }
+
+            if (filePath != null && Files.exists(filePath)) {
+                baos.write(boundaryBytes);
+                String filename = filePath.getFileName().toString();
+                String fileHeader = "Content-Disposition: form-data; name=\"" + fileField + "\"; filename=\"" + filename + "\"\r\n" +
+                        "Content-Type: " + mimeType + "\r\n\r\n";
+                baos.write(fileHeader.getBytes(StandardCharsets.UTF_8));
+                Files.copy(filePath, baos);
+                baos.write("\r\n".getBytes(StandardCharsets.UTF_8));
+            }
+
+            baos.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .timeout(Duration.ofSeconds(60))
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(baos.toByteArray()))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return parseApiResponse(response.statusCode(), response.body());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new TelegramSendResponse(false, null, "Telegram upload interrupted");
+        } catch (Exception e) {
+            log.error("Telegram upload failed: {}", e.getMessage());
+            return new TelegramSendResponse(false, null, e.getMessage());
+        }
+    }
+
+    private TelegramSendResponse parseApiResponse(int statusCode, String responseBody) {
+        try {
+            JsonNode root = objectMapper.readTree(responseBody);
+            boolean ok = root.path("ok").asBoolean(false);
+            if (ok) {
+                Long messageId = root.path("result").path("message_id").isIntegralNumber()
+                        ? root.path("result").path("message_id").asLong() : null;
+                return new TelegramSendResponse(true, messageId, null);
+            } else {
+                String desc = root.path("description").asText("HTTP " + statusCode);
+                return new TelegramSendResponse(false, null, desc);
+            }
+        } catch (Exception e) {
+            if (statusCode == 200) {
+                return new TelegramSendResponse(true, null, null);
+            }
+            return new TelegramSendResponse(false, null, "HTTP " + statusCode + ": " + responseBody);
+        }
+    }
+
+    public static String detectMimeType(Path path) {
+        if (path == null) return "application/octet-stream";
+        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+        if (name.endsWith(".png")) return "image/png";
+        if (name.endsWith(".webp")) return "image/webp";
+        if (name.endsWith(".gif")) return "image/gif";
+        if (name.endsWith(".pdf")) return "application/pdf";
+        if (name.endsWith(".json")) return "application/json";
+        if (name.endsWith(".txt") || name.endsWith(".log")) return "text/plain";
+        if (name.endsWith(".zip") || name.endsWith(".tar") || name.endsWith(".gz")) return "application/zip";
+        return "application/octet-stream";
     }
 
     /**

@@ -40,7 +40,8 @@ import java.util.concurrent.Callable;
         PoweroffCommand.class,
         com.nexus.adapters.cli.commands.TmuxCommand.class,
         com.nexus.adapters.cli.commands.ZfsCommand.class,
-        com.nexus.adapters.cli.commands.TimerCommand.class
+        com.nexus.adapters.cli.commands.TimerCommand.class,
+        com.nexus.adapters.cli.commands.TelegramCommand.class
     }
 )
 public class NexusCliRootCommand implements Callable<Integer> {
