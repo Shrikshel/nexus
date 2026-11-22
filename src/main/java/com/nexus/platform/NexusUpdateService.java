@@ -26,7 +26,7 @@ public class NexusUpdateService {
 
     private static final Logger log = LoggerFactory.getLogger(NexusUpdateService.class);
 
-    public static final String CURRENT_VERSION = "0.0.5-SNAPSHOT";
+    public static final String CURRENT_VERSION = "0.0.6-SNAPSHOT";
     public static final String DEFAULT_REPO = "Shrikshel/nexus";
 
     private final PlatformDetector platformDetector;
