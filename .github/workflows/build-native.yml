@@ -85,14 +85,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           ./${{ matrix.asset_name }} --help
-          ./${{ matrix.asset_name }} info
+          ./${{ matrix.asset_name }} system info
 
       - name: Verify Binary Output (Windows)
         if: runner.os == 'Windows'
         shell: powershell
         run: |
           .\${{ matrix.asset_name }} --help
-          .\${{ matrix.asset_name }} info
+          .\${{ matrix.asset_name }} system info
 
       - name: Upload Native Binary Artifact
         uses: actions/upload-artifact@v4

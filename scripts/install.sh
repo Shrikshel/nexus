@@ -269,7 +269,7 @@ Possible reasons:
     # Stop running daemon before in-place upgrade
     if command_exists nexus; then
         info "Stopping running Nexus daemon if active..."
-        nexus stop >/dev/null 2>&1 || true
+        nexus daemon stop >/dev/null 2>&1 || nexus stop >/dev/null 2>&1 || true
     fi
 
     mkdir -p "$TARGET_DIR" 2>/dev/null || true
@@ -348,11 +348,11 @@ Possible reasons:
     printf "\n"
     printf "${GREEN}${BOLD}Nexus is ready to use!${NC}\n\n"
     printf "Quick Start Commands:\n"
-    printf "  ${BOLD}nexus info${NC}            Display host hardware & platform telemetry\n"
-    printf "  ${BOLD}nexus disk list${NC}       Inspect mounted filesystems and capacity\n"
+    printf "  ${BOLD}nexus system info${NC}     Display host hardware & platform telemetry\n"
+    printf "  ${BOLD}nexus system disk${NC}     Inspect mounted filesystems and capacity\n"
     printf "  ${BOLD}nexus config edit${NC}     Edit or view agent configuration\n"
     printf "  ${BOLD}nexus config reload${NC}   Reload configuration on running daemon\n"
-    printf "  ${BOLD}nexus start${NC}           Launch persistent daemon (Telegram + IPC)\n"
+    printf "  ${BOLD}nexus daemon start${NC}    Launch persistent daemon (Telegram + IPC)\n"
     printf "  ${BOLD}nexus --help${NC}          Explore all subcommands\n\n"
 }
 

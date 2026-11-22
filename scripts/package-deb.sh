@@ -105,8 +105,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/nexus start
-ExecStop=/usr/local/bin/nexus stop
+ExecStart=/usr/local/bin/nexus daemon start
+ExecStop=/usr/local/bin/nexus daemon stop
 Restart=always
 RestartSec=5s
 TimeoutStopSec=15s

@@ -85,9 +85,9 @@ fi
 info "Checking for running Nexus daemon processes..."
 if command_exists nexus; then
     if [ "$DRY_RUN" = "1" ]; then
-        info "[DRY-RUN] Would request graceful daemon stop via 'nexus stop'"
+        info "[DRY-RUN] Would request graceful daemon stop via 'nexus daemon stop'"
     else
-        nexus stop >/dev/null 2>&1 || true
+        nexus daemon stop >/dev/null 2>&1 || nexus stop >/dev/null 2>&1 || true
     fi
 fi
 
