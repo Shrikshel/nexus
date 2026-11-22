@@ -42,7 +42,7 @@ public class LinuxSystemdTimerProvider implements ScheduledTaskProvider {
     public Path resolveScriptPath(String fullId, TimerScope scope) {
         Path scriptsDir;
         if (scope == TimerScope.SYSTEM) {
-            scriptsDir = Path.of("/var/lib/nexus/scripts");
+            scriptsDir = Path.of("/root/.nexus/scripts");
         } else {
             scriptsDir = Path.of(System.getProperty("user.home"), ".nexus", "scripts");
         }
@@ -68,24 +68,24 @@ public class LinuxSystemdTimerProvider implements ScheduledTaskProvider {
 
         try {
             // 1. Create script directory & default script stub
-            Files.createDirectories(scriptPath.getParent());
+            createDirectoryWithSudoFallback(scriptPath.getParent(), scope);
             if (!Files.exists(scriptPath)) {
                 String scriptContent = request.scriptContent() != null && !request.scriptContent().isBlank()
                         ? request.scriptContent()
                         : generateDefaultScriptStub(id, fullId, parsedSchedule, request.description());
-                Files.writeString(scriptPath, scriptContent, StandardCharsets.UTF_8);
+                writeStringWithSudoFallback(scriptPath, scriptContent, scope, true);
             }
             File scriptFile = scriptPath.toFile();
             scriptFile.setExecutable(true, false);
 
             // 2. Create Service Unit file
-            Files.createDirectories(unitDir);
+            createDirectoryWithSudoFallback(unitDir, scope);
             String serviceContent = generateServiceUnit(fullId, request.description(), scriptPath.toAbsolutePath().toString(), id, request.name());
-            Files.writeString(serviceUnitPath, serviceContent, StandardCharsets.UTF_8);
+            writeStringWithSudoFallback(serviceUnitPath, serviceContent, scope, false);
 
             // 3. Create Timer Unit file
             String timerContent = generateTimerUnit(fullId, request.description(), parsedSchedule.systemdDirective(), id, request.name());
-            Files.writeString(timerUnitPath, timerContent, StandardCharsets.UTF_8);
+            writeStringWithSudoFallback(timerUnitPath, timerContent, scope, false);
 
             // 4. Reload systemd daemon
             runSystemctl(scope, List.of("daemon-reload"));
@@ -157,6 +157,13 @@ public class LinuxSystemdTimerProvider implements ScheduledTaskProvider {
 
     @Override
     public List<TimerInfo> listTimers(TimerScope scope) {
+        if (scope == TimerScope.ALL || scope == null) {
+            List<TimerInfo> all = new ArrayList<>();
+            all.addAll(listTimers(TimerScope.USER));
+            all.addAll(listTimers(TimerScope.SYSTEM));
+            return all;
+        }
+
         TimerStateManager.StateFile state = stateManager.loadState(scope);
         Map<String, TimerStateManager.TimerRecord> recorded = new LinkedHashMap<>();
         if (state != null && state.timers() != null) {
@@ -287,7 +294,7 @@ public class LinuxSystemdTimerProvider implements ScheduledTaskProvider {
         try {
             if (request.schedule() != null && !request.schedule().isBlank()) {
                 String timerContent = generateTimerUnit(existing.fullIdentifier(), newDesc, parsed.systemdDirective(), existing.id(), existing.name());
-                Files.writeString(timerUnitPath, timerContent, StandardCharsets.UTF_8);
+                writeStringWithSudoFallback(timerUnitPath, timerContent, scope, false);
                 runSystemctl(scope, List.of("daemon-reload"));
                 runSystemctl(scope, List.of("restart", unitBaseName + ".timer"));
             }
@@ -355,16 +362,12 @@ public class LinuxSystemdTimerProvider implements ScheduledTaskProvider {
         Path scriptPath = Path.of(r.scriptPath());
 
         try {
-            if (Files.exists(timerPath)) {
-                Files.deleteIfExists(timerPath);
-                deletedTimer = true;
-            }
-            if (Files.exists(servicePath)) {
-                Files.deleteIfExists(servicePath);
-                deletedService = true;
-            }
-            if (purgeScript && Files.exists(scriptPath)) {
-                Files.deleteIfExists(scriptPath);
+            deleteFileWithSudoFallback(timerPath, scope);
+            deletedTimer = true;
+            deleteFileWithSudoFallback(servicePath, scope);
+            deletedService = true;
+            if (purgeScript) {
+                deleteFileWithSudoFallback(scriptPath, scope);
                 deletedScript = true;
             }
 
@@ -408,11 +411,18 @@ public class LinuxSystemdTimerProvider implements ScheduledTaskProvider {
 
         Path script = Path.of(r.scriptPath());
         if (!Files.exists(script)) {
-            return new TimerRunResult(false, r.fullIdentifier(), 1, "", 0, "Script file does not exist at: " + r.scriptPath());
+            if (scope != TimerScope.SYSTEM || "root".equalsIgnoreCase(System.getProperty("user.name"))) {
+                return new TimerRunResult(false, r.fullIdentifier(), 1, "", 0, "Script file does not exist at: " + r.scriptPath());
+            }
         }
 
         try {
-            ProcessBuilder pb = new ProcessBuilder(r.scriptPath());
+            List<String> cmd = new ArrayList<>();
+            if (scope == TimerScope.SYSTEM && !"root".equalsIgnoreCase(System.getProperty("user.name"))) {
+                cmd.add("sudo");
+            }
+            cmd.add(r.scriptPath());
+            ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(true);
             Process proc = pb.start();
             String output = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -436,6 +446,9 @@ public class LinuxSystemdTimerProvider implements ScheduledTaskProvider {
     private void runSystemctl(TimerScope scope, List<String> args) {
         try {
             List<String> cmd = new ArrayList<>();
+            if (scope == TimerScope.SYSTEM && !"root".equalsIgnoreCase(System.getProperty("user.name"))) {
+                cmd.add("sudo");
+            }
             cmd.add("systemctl");
             if (scope == TimerScope.USER) {
                 cmd.add("--user");
@@ -559,6 +572,70 @@ public class LinuxSystemdTimerProvider implements ScheduledTaskProvider {
                 "Persistent=true\n\n" +
                 "[Install]\n" +
                 "WantedBy=timers.target\n";
+    }
+
+    private void createDirectoryWithSudoFallback(Path dir, TimerScope scope) throws IOException {
+        if (dir == null || Files.exists(dir)) return;
+        try {
+            Files.createDirectories(dir);
+        } catch (Exception e) {
+            if (scope == TimerScope.SYSTEM) {
+                try {
+                    new ProcessBuilder("sudo", "mkdir", "-p", dir.toString()).start().waitFor();
+                } catch (Exception ex) {
+                    throw new IOException("Failed to create directory " + dir + ": " + ex.getMessage(), ex);
+                }
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    private void writeStringWithSudoFallback(Path path, String content, TimerScope scope, boolean makeExecutable) throws IOException {
+        try {
+            Files.writeString(path, content, StandardCharsets.UTF_8);
+            if (makeExecutable) {
+                path.toFile().setExecutable(true, false);
+            }
+        } catch (Exception e) {
+            if (scope == TimerScope.SYSTEM) {
+                try {
+                    File tmp = File.createTempFile("nexus-tmp-", ".tmp");
+                    Files.writeString(tmp.toPath(), content, StandardCharsets.UTF_8);
+                    new ProcessBuilder("sudo", "cp", tmp.getAbsolutePath(), path.toString()).start().waitFor();
+                    if (makeExecutable) {
+                        new ProcessBuilder("sudo", "chmod", "755", path.toString()).start().waitFor();
+                    } else {
+                        new ProcessBuilder("sudo", "chmod", "644", path.toString()).start().waitFor();
+                    }
+                    tmp.delete();
+                } catch (Exception ex) {
+                    throw new IOException("Failed to write file " + path + ": " + ex.getMessage(), ex);
+                }
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    private void deleteFileWithSudoFallback(Path path, TimerScope scope) throws IOException {
+        if (scope == TimerScope.SYSTEM) {
+            try {
+                if (Files.exists(path)) {
+                    Files.deleteIfExists(path);
+                    return;
+                }
+            } catch (Exception ignored) {}
+            try {
+                new ProcessBuilder("sudo", "rm", "-f", path.toString()).start().waitFor();
+            } catch (Exception ex) {
+                throw new IOException("Failed to delete " + path + ": " + ex.getMessage(), ex);
+            }
+        } else {
+            if (Files.exists(path)) {
+                Files.deleteIfExists(path);
+            }
+        }
     }
 
     private record LiveTimerStatus(boolean active, String nextRun, String lastRun, String lastResult) {

@@ -406,43 +406,45 @@ nexus config reload
 ```
 
 #### 7. Recurring Timers & Automation Engine (systemd, launchd, Task Scheduler)
-Manage cross-platform scheduled tasks with zero root privileges (runs in user mode by default with `systemctl --user`):
+Manage cross-platform scheduled tasks across both user space and system services. User timers run unprivileged via `systemctl --user` with scripts in `~/.nexus/scripts/`, while system timers run machine-wide with scripts in `/root/.nexus/scripts/` and unit files in `/etc/systemd/system/`.
 
 ```bash
-# List all configured timers, schedules, and live execution telemetry
-./nexus timer
-./nexus timer list
-./nexus timer list --json
+# List all configured timers across all scopes (user and system) with live telemetry and SCOPE column
+nexus timer
+nexus timer list
+nexus timer list --user     # Filter strictly to user timers
+nexus timer list --system   # Filter strictly to system-wide daemon timers
+nexus timer list --json
 
-# Create a scheduled timer with friendly preset (daily, midnight, hourly, weekly, twice-weekly, monthly, boot)
+# Create a user timer with friendly preset (daily, midnight, hourly, weekly, twice-weekly, monthly, boot)
 # Scaffolds ~/.nexus/scripts/NX001-backup-db.sh with executable permissions (0755) and enables systemd timer immediately
-./nexus timer create backup-db --schedule "daily" --desc "Daily PostgreSQL database backup"
+nexus timer create backup-db --schedule "daily" --desc "Daily PostgreSQL database backup"
+
+# Create a system-wide timer (stored under /root/.nexus/ and enabled in systemd system scope)
+nexus timer create root-cleanup --schedule "hourly" --desc "System-wide cache cleanup" --system
 
 # Create a timer with monotonic interval (e.g. every 15m, every 2h, 30s)
-./nexus timer create sync-s3 --schedule "every 15m" --desc "Sync files to S3 bucket"
+nexus timer create sync-s3 --schedule "every 15m" --desc "Sync files to S3 bucket"
 
 # Create and immediately open the executable automation script in your editor (nano, vim, code)
-./nexus timer create cert-renew --schedule "weekly" --edit
+nexus timer create cert-renew --schedule "weekly" --edit
 
-# Inspect live status, next activation time, and recent systemd journal execution logs
-./nexus timer status NX001
-./nexus timer status backup-db
+# Inspect live status, next activation time, and recent execution logs (auto-resolves scope)
+nexus timer status NX001
+nexus timer status backup-db
 
 # Trigger an immediate one-off execution of the timer's script for testing
-./nexus timer run NX001
+nexus timer run NX001
 
-# Edit the executable script or update the schedule
-./nexus timer edit NX001                      # Opens script in $EDITOR
-./nexus timer edit NX001 --schedule "every 2h" # Updates schedule and reloads daemon
-./nexus timer edit NX001 --timer              # Inspect/edit the systemd .timer unit file
-./nexus timer edit NX001 --print              # Prints exact editor command and path
+# Edit the executable script or update the schedule (auto-resolves scope)
+nexus timer edit NX001                      # Opens script in $EDITOR
+nexus timer edit NX001 --schedule "every 2h" # Updates schedule and reloads daemon
+nexus timer edit NX001 --timer              # Inspect/edit the systemd .timer unit file
+nexus timer edit NX001 --print              # Prints exact editor command and path
 
-# Delete a timer (unlinks systemd unit files and unregisters state)
-./nexus timer delete NX001 -y
-./nexus timer delete NX001 --purge-script -y  # Also deletes ~/.nexus/scripts/NX001-backup-db.sh
-
-# Target system-wide daemon scope instead of user scope (requires sudo)
-sudo ./nexus timer create root-cleanup --schedule "daily" --system
+# Delete a timer (auto-resolves scope, unlinks systemd unit files, and unregisters state)
+nexus timer delete NX001 -y
+nexus timer delete NX001 --purge-script -y  # Also deletes associated executable automation script
 ```
 
 #### 8. Native Telegram Notification & Media Dispatching API

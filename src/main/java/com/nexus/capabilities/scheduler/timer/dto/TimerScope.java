@@ -14,5 +14,10 @@ public enum TimerScope {
      * System-wide daemon timer (/etc/systemd/system, /Library/LaunchDaemons, Windows SYSTEM).
      * Requires root or elevated administrative privileges.
      */
-    SYSTEM
+    SYSTEM,
+
+    /**
+     * Aggregated view covering all registered scopes (both user and system).
+     */
+    ALL
 }

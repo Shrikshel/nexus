@@ -97,6 +97,12 @@ public class MacLaunchdProvider implements ScheduledTaskProvider {
 
     @Override
     public List<TimerInfo> listTimers(TimerScope scope) {
+        if (scope == TimerScope.ALL || scope == null) {
+            List<TimerInfo> all = new ArrayList<>();
+            all.addAll(listTimers(TimerScope.USER));
+            all.addAll(listTimers(TimerScope.SYSTEM));
+            return all;
+        }
         TimerStateManager.StateFile state = stateManager.loadState(scope);
         List<TimerInfo> list = new ArrayList<>();
         for (TimerStateManager.TimerRecord r : state.timers().values()) {

@@ -63,13 +63,23 @@ public class TimerCommand implements Callable<Integer> {
     @Option(names = {"--system"}, description = "Target system-wide scope instead of user scope")
     private boolean system;
 
+    @Option(names = {"--user"}, description = "Target user scope explicitly")
+    private boolean user;
+
     @Override
     public Integer call() {
         boolean json = isJsonRequested(spec);
         PrintWriter out = resolveOut(spec);
         PrintWriter err = resolveErr(spec);
 
-        TimerScope scope = system ? TimerScope.SYSTEM : TimerScope.USER;
+        TimerScope scope;
+        if (system && !user) {
+            scope = TimerScope.SYSTEM;
+        } else if (user && !system) {
+            scope = TimerScope.USER;
+        } else {
+            scope = TimerScope.ALL; // Default: list all configured timers
+        }
         return bridge.execute(TimerListCapability.ID, new TimerListRequest(scope), json, out, err);
     }
 
@@ -90,13 +100,23 @@ public class TimerCommand implements Callable<Integer> {
         @Option(names = {"--system"}, description = "Target system-wide scope instead of user scope")
         private boolean system;
 
+        @Option(names = {"--user"}, description = "Target user scope explicitly")
+        private boolean user;
+
         @Override
         public Integer call() {
             boolean json = isJsonRequested(spec);
             PrintWriter out = resolveOut(spec);
             PrintWriter err = resolveErr(spec);
 
-            TimerScope scope = system ? TimerScope.SYSTEM : TimerScope.USER;
+            TimerScope scope;
+            if (system && !user) {
+                scope = TimerScope.SYSTEM;
+            } else if (user && !system) {
+                scope = TimerScope.USER;
+            } else {
+                scope = TimerScope.ALL; // Default: list all configured timers
+            }
             return parent.getBridge().execute(TimerListCapability.ID, new TimerListRequest(scope), json, out, err);
         }
     }
@@ -140,6 +160,9 @@ public class TimerCommand implements Callable<Integer> {
         @Option(names = {"--system"}, description = "Create as system-wide daemon timer instead of user timer")
         private boolean system;
 
+        @Option(names = {"--user"}, description = "Create as user timer explicitly")
+        private boolean user;
+
         @Option(names = {"--editor"}, description = "Custom editor executable (e.g. nano, vim, code)")
         private String editor;
 
@@ -149,7 +172,14 @@ public class TimerCommand implements Callable<Integer> {
             PrintWriter out = resolveOut(spec);
             PrintWriter err = resolveErr(spec);
 
-            TimerScope scope = system ? TimerScope.SYSTEM : TimerScope.USER;
+            TimerScope scope;
+            if (system && !user) {
+                scope = TimerScope.SYSTEM;
+            } else if (user && !system) {
+                scope = TimerScope.USER;
+            } else {
+                scope = "root".equalsIgnoreCase(System.getProperty("user.name")) ? TimerScope.SYSTEM : TimerScope.USER;
+            }
             TimerCreateRequest req = new TimerCreateRequest(name, schedule, description, scope, scriptContent, openEditor);
 
             int exitCode = parent.getBridge().execute(TimerCreateCapability.ID, req, json, out, err);
@@ -188,13 +218,23 @@ public class TimerCommand implements Callable<Integer> {
         @Option(names = {"--system"}, description = "Target system-wide scope instead of user scope")
         private boolean system;
 
+        @Option(names = {"--user"}, description = "Target user scope explicitly")
+        private boolean user;
+
         @Override
         public Integer call() {
             boolean json = isJsonRequested(spec);
             PrintWriter out = resolveOut(spec);
             PrintWriter err = resolveErr(spec);
 
-            TimerScope scope = system ? TimerScope.SYSTEM : TimerScope.USER;
+            TimerScope scope;
+            if (system && !user) {
+                scope = TimerScope.SYSTEM;
+            } else if (user && !system) {
+                scope = TimerScope.USER;
+            } else {
+                scope = TimerScope.ALL;
+            }
             TimerStatusRequest req = new TimerStatusRequest(nameOrId, scope);
             return parent.getBridge().execute(TimerStatusCapability.ID, req, json, out, err);
         }
@@ -240,13 +280,23 @@ public class TimerCommand implements Callable<Integer> {
         @Option(names = {"--system"}, description = "Target system-wide scope instead of user scope")
         private boolean system;
 
+        @Option(names = {"--user"}, description = "Target user scope explicitly")
+        private boolean user;
+
         @Override
         public Integer call() {
             boolean json = isJsonRequested(spec);
             PrintWriter out = resolveOut(spec);
             PrintWriter err = resolveErr(spec);
 
-            TimerScope scope = system ? TimerScope.SYSTEM : TimerScope.USER;
+            TimerScope scope;
+            if (system && !user) {
+                scope = TimerScope.SYSTEM;
+            } else if (user && !system) {
+                scope = TimerScope.USER;
+            } else {
+                scope = TimerScope.ALL;
+            }
 
             // If updating schedule or description via flags
             if (schedule != null || description != null) {
@@ -311,13 +361,23 @@ public class TimerCommand implements Callable<Integer> {
         @Option(names = {"--system"}, description = "Target system-wide scope instead of user scope")
         private boolean system;
 
+        @Option(names = {"--user"}, description = "Target user scope explicitly")
+        private boolean user;
+
         @Override
         public Integer call() {
             boolean json = isJsonRequested(spec);
             PrintWriter out = resolveOut(spec);
             PrintWriter err = resolveErr(spec);
 
-            TimerScope scope = system ? TimerScope.SYSTEM : TimerScope.USER;
+            TimerScope scope;
+            if (system && !user) {
+                scope = TimerScope.SYSTEM;
+            } else if (user && !system) {
+                scope = TimerScope.USER;
+            } else {
+                scope = TimerScope.ALL;
+            }
             TimerRunRequest req = new TimerRunRequest(nameOrId, scope);
             return parent.getBridge().execute(TimerRunCapability.ID, req, json, out, err);
         }
@@ -349,13 +409,23 @@ public class TimerCommand implements Callable<Integer> {
         @Option(names = {"--system"}, description = "Target system-wide scope instead of user scope")
         private boolean system;
 
+        @Option(names = {"--user"}, description = "Target user scope explicitly")
+        private boolean user;
+
         @Override
         public Integer call() {
             boolean json = isJsonRequested(spec);
             PrintWriter out = resolveOut(spec);
             PrintWriter err = resolveErr(spec);
 
-            TimerScope scope = system ? TimerScope.SYSTEM : TimerScope.USER;
+            TimerScope scope;
+            if (system && !user) {
+                scope = TimerScope.SYSTEM;
+            } else if (user && !system) {
+                scope = TimerScope.USER;
+            } else {
+                scope = TimerScope.ALL;
+            }
             TimerDeleteRequest req = new TimerDeleteRequest(nameOrId, purgeScript, scope);
             return parent.getBridge().execute(TimerDeleteCapability.ID, req, json, out, err);
         }

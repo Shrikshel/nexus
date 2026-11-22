@@ -108,7 +108,7 @@ public class TimerStateManager {
 
     public Path getStateFilePath(TimerScope scope) {
         if (scope == TimerScope.SYSTEM) {
-            return Path.of("/etc/nexus/state/timers.json");
+            return Path.of("/root/.nexus/state/timers.json");
         }
         return Path.of(System.getProperty("user.home"), ".nexus", "state", "timers.json");
     }
@@ -125,6 +125,19 @@ public class TimerStateManager {
             } catch (Exception e) {
                 log.warn("Could not read timer state file at {}: {}. Auto-healing...", path, e.getMessage());
             }
+        } else if (scope == TimerScope.SYSTEM && !"root".equalsIgnoreCase(System.getProperty("user.name"))) {
+            // Attempt to read system state via sudo if running as non-root user
+            try {
+                Process p = new ProcessBuilder("sudo", "-n", "cat", path.toString()).start();
+                byte[] bytes = p.getInputStream().readAllBytes();
+                int exit = p.waitFor();
+                if (exit == 0 && bytes.length > 0) {
+                    JsonNode root = objectMapper.readTree(bytes);
+                    if (root != null && root.isObject()) {
+                        return parseStateNode(root);
+                    }
+                }
+            } catch (Exception ignored) {}
         }
         return new StateFile(1, new LinkedHashMap<>());
     }
@@ -174,6 +187,20 @@ public class TimerStateManager {
             Files.createDirectories(path.getParent());
             objectMapper.writeValue(path.toFile(), state);
         } catch (Exception e) {
+            // Sudo fallback for writing system timer state when run as standard user
+            if (scope == TimerScope.SYSTEM) {
+                try {
+                    File tmp = File.createTempFile("nexus-timer-state-", ".json");
+                    objectMapper.writeValue(tmp, state);
+                    new ProcessBuilder("sudo", "mkdir", "-p", path.getParent().toString()).start().waitFor();
+                    new ProcessBuilder("sudo", "cp", tmp.getAbsolutePath(), path.toString()).start().waitFor();
+                    new ProcessBuilder("sudo", "chmod", "644", path.toString()).start().waitFor();
+                    tmp.delete();
+                    return;
+                } catch (Exception ex) {
+                    log.error("Failed to save system timer state via sudo to {}: {}", path, ex.getMessage());
+                }
+            }
             log.error("Failed to save timer state to {}: {}", path, e.getMessage());
         }
     }
@@ -233,6 +260,13 @@ public class TimerStateManager {
      * or "nexus-nx001-backup-db") to the corresponding timer record.
      */
     public Optional<TimerRecord> resolveTimer(TimerScope scope, String nameOrId) {
+        if (scope == TimerScope.ALL || scope == null) {
+            Optional<TimerRecord> userOpt = resolveTimer(TimerScope.USER, nameOrId);
+            if (userOpt.isPresent()) {
+                return userOpt;
+            }
+            return resolveTimer(TimerScope.SYSTEM, nameOrId);
+        }
         if (nameOrId == null || nameOrId.isBlank()) {
             return Optional.empty();
         }

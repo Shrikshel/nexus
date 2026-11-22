@@ -86,10 +86,7 @@ public final class NexusLogManager {
         // Check if running as root on Linux/macOS
         String user = System.getProperty("user.name", "");
         if ("root".equalsIgnoreCase(user)) {
-            File varLog = new File("/var/log");
-            if (varLog.exists() && varLog.canWrite()) {
-                return Path.of("/var/log/nexus");
-            }
+            return Path.of("/root/.nexus/logs");
         }
 
         String home = System.getProperty("user.home", ".");
@@ -284,23 +281,27 @@ public final class NexusLogManager {
      * (e.g. ~/.nexus/logs/logs, ~/.nexus/scripts/logs, ~/.nexus/state/logs).
      */
     public static void cleanRogueNestedLogDirs() {
-        String home = System.getProperty("user.home", ".");
-        Path nexusHome = Path.of(home, ".nexus");
-        if (!Files.exists(nexusHome)) {
-            return;
-        }
+        List<Path> nexusRoots = new ArrayList<>();
+        nexusRoots.add(Path.of(System.getProperty("user.home", "."), ".nexus"));
+        nexusRoots.add(Path.of("/root/.nexus"));
 
-        List<Path> strayDirs = List.of(
-                nexusHome.resolve("logs").resolve("logs"),
-                nexusHome.resolve("scripts").resolve("logs"),
-                nexusHome.resolve("state").resolve("logs")
-        );
+        for (Path nexusHome : nexusRoots) {
+            if (!Files.exists(nexusHome)) {
+                continue;
+            }
 
-        for (Path stray : strayDirs) {
-            if (Files.exists(stray) && Files.isDirectory(stray)) {
-                try {
-                    deleteRecursively(stray);
-                } catch (Exception ignored) {}
+            List<Path> strayDirs = List.of(
+                    nexusHome.resolve("logs").resolve("logs"),
+                    nexusHome.resolve("scripts").resolve("logs"),
+                    nexusHome.resolve("state").resolve("logs")
+            );
+
+            for (Path stray : strayDirs) {
+                if (Files.exists(stray) && Files.isDirectory(stray)) {
+                    try {
+                        deleteRecursively(stray);
+                    } catch (Exception ignored) {}
+                }
             }
         }
     }

@@ -52,32 +52,54 @@ public class ScheduledTaskManager {
         return provider.createTimer(request, id, fullIdentifier, scriptPath);
     }
 
+    public TimerStateManager getStateManager() {
+        return stateManager;
+    }
+
     public List<TimerInfo> listTimers(TimerScope scope) {
-        TimerScope s = scope != null ? scope : TimerScope.USER;
+        TimerScope s = scope != null ? scope : TimerScope.ALL;
         return getActiveProvider().listTimers(s);
     }
 
     public TimerStatusResult getTimerStatus(String nameOrId, TimerScope scope) {
-        TimerScope s = scope != null ? scope : TimerScope.USER;
+        TimerScope s = scope;
+        if (s == null || s == TimerScope.ALL) {
+            var opt = stateManager.resolveTimer(TimerScope.ALL, nameOrId);
+            s = opt.map(TimerStateManager.TimerRecord::scope).orElse(TimerScope.USER);
+        }
         return getActiveProvider().getTimerStatus(nameOrId, s);
     }
 
     public TimerDeleteResult deleteTimer(TimerDeleteRequest request) {
-        TimerScope s = request.scope() != null ? request.scope() : TimerScope.USER;
+        TimerScope s = request.scope();
+        if (s == null || s == TimerScope.ALL) {
+            var opt = stateManager.resolveTimer(TimerScope.ALL, request.nameOrId());
+            s = opt.map(TimerStateManager.TimerRecord::scope).orElse(TimerScope.USER);
+        }
         return getActiveProvider().deleteTimer(request.nameOrId(), s, request.purgeScript());
     }
 
     public TimerUpdateResult updateTimer(TimerUpdateRequest request) {
+        TimerScope s = request.scope();
+        if (s == null || s == TimerScope.ALL) {
+            var opt = stateManager.resolveTimer(TimerScope.ALL, request.nameOrId());
+            s = opt.map(TimerStateManager.TimerRecord::scope).orElse(TimerScope.USER);
+            request = new TimerUpdateRequest(request.nameOrId(), request.schedule(), request.description(), s);
+        }
         return getActiveProvider().updateTimer(request);
     }
 
     public TimerRunResult runTimer(TimerRunRequest request) {
-        TimerScope s = request.scope() != null ? request.scope() : TimerScope.USER;
+        TimerScope s = request.scope();
+        if (s == null || s == TimerScope.ALL) {
+            var opt = stateManager.resolveTimer(TimerScope.ALL, request.nameOrId());
+            s = opt.map(TimerStateManager.TimerRecord::scope).orElse(TimerScope.USER);
+        }
         return getActiveProvider().runTimer(request.nameOrId(), s);
     }
 
     public Path resolveScriptPath(String nameOrId, TimerScope scope) {
-        TimerScope s = scope != null ? scope : TimerScope.USER;
+        TimerScope s = scope != null ? scope : TimerScope.ALL;
         var opt = stateManager.resolveTimer(s, nameOrId);
         if (opt.isPresent()) {
             return Path.of(opt.get().scriptPath());

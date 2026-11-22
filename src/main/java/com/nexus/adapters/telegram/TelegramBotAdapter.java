@@ -429,9 +429,9 @@ public class TelegramBotAdapter implements SmartLifecycle {
         String[] parts = text.trim().split("\\s+");
         if (parts.length > 1) {
             String timerId = parts[1].trim();
-            executeAndReply("timer.status", context, new TimerStatusRequest(timerId, TimerScope.USER), chatId, botToken);
+            executeAndReply("timer.status", context, new TimerStatusRequest(timerId, TimerScope.ALL), chatId, botToken);
         } else {
-            executeAndReply("timer.list", context, new TimerListRequest(TimerScope.USER), chatId, botToken);
+            executeAndReply("timer.list", context, new TimerListRequest(TimerScope.ALL), chatId, botToken);
         }
     }
 

@@ -170,6 +170,7 @@ public class UninstallCommand implements Callable<Integer> {
                     Path.of("/var/log/nexus"),
                     Path.of(System.getProperty("user.home"), ".nexus"),
                     Path.of(System.getProperty("user.home"), ".config", "nexus"),
+                    Path.of("/root/.nexus"),
                     Path.of("/etc/nexus")
             };
             for (Path p : purgeTargets) {

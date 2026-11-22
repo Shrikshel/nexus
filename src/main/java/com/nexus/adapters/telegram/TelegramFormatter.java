@@ -435,15 +435,19 @@ public class TelegramFormatter {
     }
 
     private String formatTimerList(TimerListReport r) {
+        String scopeLabel = r.scope() == com.nexus.capabilities.scheduler.timer.dto.TimerScope.ALL
+                ? "all scopes"
+                : r.scope().name().toLowerCase() + " scope";
         StringBuilder sb = new StringBuilder("⏰ <b>Scheduled Timers (")
-                .append(r.scope().name().toLowerCase()).append(" scope)</b>\n\n");
+                .append(scopeLabel).append(")</b>\n\n");
         if (r.timers().isEmpty()) {
             sb.append("<i>No timers configured on this host.</i>");
             return sb.toString();
         }
 
         for (TimerInfo t : r.timers()) {
-            sb.append("• <b>").append(escapeHtml(t.id())).append("</b> - <code>")
+            String scopeBadge = t.scope() != null ? " [" + t.scope().name().toLowerCase() + "]" : "";
+            sb.append("• <b>").append(escapeHtml(t.id())).append("</b>").append(scopeBadge).append(" - <code>")
               .append(escapeHtml(t.name())).append("</code>\n")
               .append("  <i>Schedule:</i> ").append(escapeHtml(t.scheduleDetails())).append("\n")
               .append("  <i>State:</i> ").append(t.active() ? "🟢 Active" : "⚪ Inactive")

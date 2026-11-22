@@ -68,7 +68,7 @@ public class TimerStatusCapability implements Capability<TimerStatusRequest, Tim
             return CapabilityResult.failure(ID, ErrorCode.INVALID_INPUT, "Timer name or ID must be specified", start);
         }
         try {
-            TimerScope scope = input.scope() != null ? input.scope() : TimerScope.USER;
+            TimerScope scope = input.scope() != null ? input.scope() : TimerScope.ALL;
             TimerStatusResult result = taskManager.getTimerStatus(input.nameOrId(), scope);
             if (!result.success()) {
                 return CapabilityResult.failure(ID, ErrorCode.INTERNAL_ERROR, result.message(), start);

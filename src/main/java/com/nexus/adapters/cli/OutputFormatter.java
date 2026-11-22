@@ -523,16 +523,24 @@ public class OutputFormatter {
     }
 
     private void renderTimerList(TimerListReport r, PrintWriter out) {
-        out.println("\u001B[1;36m=== Scheduled Timers & Automation Tasks (" + r.scope().name().toLowerCase() + " scope) ===\u001B[0m");
+        boolean showScope = r.scope() == com.nexus.capabilities.scheduler.timer.dto.TimerScope.ALL;
+        String scopeTitle = showScope ? "all scopes" : r.scope().name().toLowerCase() + " scope";
+        out.println("\u001B[1;36m=== Scheduled Timers & Automation Tasks (" + scopeTitle + ") ===\u001B[0m");
         if (r.timers().isEmpty()) {
             out.println("  ℹ No scheduled timers configured.");
             out.println("  💡 Create one using: \u001B[32mnexus timer create <name> --schedule 'daily'\u001B[0m");
             return;
         }
 
-        out.printf("  \u001B[1m%-8s %-22s %-16s %-10s %-22s %-14s\u001B[0m%n",
-                "ID", "IDENTIFIER", "SCHEDULE", "STATUS", "NEXT ACTIVATION", "LAST RESULT");
-        out.println("  ------------------------------------------------------------------------------------------------");
+        if (showScope) {
+            out.printf("  \u001B[1m%-8s %-8s %-22s %-16s %-10s %-22s %-14s\u001B[0m%n",
+                    "ID", "SCOPE", "IDENTIFIER", "SCHEDULE", "STATUS", "NEXT ACTIVATION", "LAST RESULT");
+            out.println("  ---------------------------------------------------------------------------------------------------------");
+        } else {
+            out.printf("  \u001B[1m%-8s %-22s %-16s %-10s %-22s %-14s\u001B[0m%n",
+                    "ID", "IDENTIFIER", "SCHEDULE", "STATUS", "NEXT ACTIVATION", "LAST RESULT");
+            out.println("  ------------------------------------------------------------------------------------------------");
+        }
 
         for (TimerInfo t : r.timers()) {
             String status = t.active() ? "\u001B[32mActive\u001B[0m" : "\u001B[90mInactive\u001B[0m";
@@ -545,13 +553,25 @@ public class OutputFormatter {
                 }
             }
 
-            out.printf("  \u001B[1;36m%-8s\u001B[0m %-22s %-16s %-19s %-22s %s%n",
-                    t.id(),
-                    truncate(t.fullIdentifier(), 22),
-                    truncate(t.schedule(), 16),
-                    status,
-                    truncate(t.nextRun() != null ? t.nextRun() : "-", 22),
-                    lastResult);
+            String scopeStr = t.scope() != null ? t.scope().name().toLowerCase() : "user";
+            if (showScope) {
+                out.printf("  \u001B[1;36m%-8s\u001B[0m %-8s %-22s %-16s %-19s %-22s %s%n",
+                        t.id(),
+                        scopeStr,
+                        truncate(t.fullIdentifier(), 22),
+                        truncate(t.schedule(), 16),
+                        status,
+                        truncate(t.nextRun() != null ? t.nextRun() : "-", 22),
+                        lastResult);
+            } else {
+                out.printf("  \u001B[1;36m%-8s\u001B[0m %-22s %-16s %-19s %-22s %s%n",
+                        t.id(),
+                        truncate(t.fullIdentifier(), 22),
+                        truncate(t.schedule(), 16),
+                        status,
+                        truncate(t.nextRun() != null ? t.nextRun() : "-", 22),
+                        lastResult);
+            }
         }
 
         out.printf("%n  Total Timers: \u001B[1m%d\u001B[0m%n", r.count());
