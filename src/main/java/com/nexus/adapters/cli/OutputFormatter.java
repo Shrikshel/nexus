@@ -12,6 +12,7 @@ import com.nexus.capabilities.process.dto.ProcessInfo;
 import com.nexus.capabilities.process.dto.ProcessListReport;
 import com.nexus.capabilities.resource.dto.CpuReport;
 import com.nexus.capabilities.resource.dto.MemoryReport;
+import com.nexus.capabilities.scheduler.timer.dto.*;
 import com.nexus.capabilities.service.dto.ServiceListReport;
 import com.nexus.capabilities.service.dto.ServiceUnitInfo;
 import com.nexus.capabilities.storage.dto.DiskListReport;
@@ -121,6 +122,18 @@ public class OutputFormatter {
             renderZfsSnapshotList(report, out);
         } else if (payload instanceof ZfsDatasetDetailReport report) {
             renderZfsDatasetDetail(report, out);
+        } else if (payload instanceof TimerListReport report) {
+            renderTimerList(report, out);
+        } else if (payload instanceof TimerCreateResult report) {
+            renderTimerCreate(report, out);
+        } else if (payload instanceof TimerStatusResult report) {
+            renderTimerStatus(report, out);
+        } else if (payload instanceof TimerUpdateResult report) {
+            renderTimerUpdate(report, out);
+        } else if (payload instanceof TimerRunResult report) {
+            renderTimerRun(report, out);
+        } else if (payload instanceof TimerDeleteResult report) {
+            renderTimerDelete(report, out);
         } else {
             try {
                 out.println(objectMapper.writeValueAsString(payload));
@@ -495,6 +508,145 @@ public class OutputFormatter {
             out.printf("  %-24s %s%n", entry.getKey(), entry.getValue());
         }
         out.printf("%n  Total Properties: \u001B[1m%d\u001B[0m%n", r.properties().size());
+    }
+
+    private void renderTimerList(TimerListReport r, PrintWriter out) {
+        out.println("\u001B[1;36m=== Scheduled Timers & Automation Tasks (" + r.scope().name().toLowerCase() + " scope) ===\u001B[0m");
+        if (r.timers().isEmpty()) {
+            out.println("  ℹ No scheduled timers configured.");
+            out.println("  💡 Create one using: \u001B[32mnexus timer create <name> --schedule 'daily'\u001B[0m");
+            return;
+        }
+
+        out.printf("  \u001B[1m%-8s %-22s %-16s %-10s %-22s %-14s\u001B[0m%n",
+                "ID", "IDENTIFIER", "SCHEDULE", "STATUS", "NEXT ACTIVATION", "LAST RESULT");
+        out.println("  ------------------------------------------------------------------------------------------------");
+
+        for (TimerInfo t : r.timers()) {
+            String status = t.active() ? "\u001B[32mActive\u001B[0m" : "\u001B[90mInactive\u001B[0m";
+            String lastResult = "-";
+            if (t.lastResult() != null && !t.lastResult().isBlank()) {
+                if ("0".equals(t.lastResult()) || "success".equalsIgnoreCase(t.lastResult())) {
+                    lastResult = "\u001B[32msuccess\u001B[0m";
+                } else if (!"-".equals(t.lastResult())) {
+                    lastResult = "\u001B[31m" + t.lastResult() + "\u001B[0m";
+                }
+            }
+
+            out.printf("  \u001B[1;36m%-8s\u001B[0m %-22s %-16s %-19s %-22s %s%n",
+                    t.id(),
+                    truncate(t.fullIdentifier(), 22),
+                    truncate(t.schedule(), 16),
+                    status,
+                    truncate(t.nextRun() != null ? t.nextRun() : "-", 22),
+                    lastResult);
+        }
+
+        out.printf("%n  Total Timers: \u001B[1m%d\u001B[0m%n", r.count());
+        out.println("  💡 Edit automation script: \u001B[32mnexus timer edit <ID>\u001B[0m | Trigger now: \u001B[32mnexus timer run <ID>\u001B[0m");
+    }
+
+    private void renderTimerCreate(TimerCreateResult r, PrintWriter out) {
+        if (!r.success()) {
+            out.println("\u001B[31m✖ Failed to create timer: " + r.message() + "\u001B[0m");
+            return;
+        }
+        TimerInfo t = r.timer();
+        String fullId = t != null ? t.fullIdentifier() : "Timer";
+        out.println("\u001B[1;32m✓ Scheduled Timer " + fullId + " successfully created!\u001B[0m");
+        if (t != null) {
+            out.printf("  • Identifier:      \u001B[1m%s\u001B[0m (%s)%n", t.fullIdentifier(), t.id());
+            out.printf("  • Schedule:        %s (%s)%n", t.scheduleDetails(), t.schedule());
+            out.printf("  • Scope:           %s%n", t.scope().name().toLowerCase());
+            if (t.unitPath() != null) {
+                out.printf("  • Timer Unit:      %s%n", t.unitPath());
+            }
+            if (t.serviceUnitPath() != null) {
+                out.printf("  • Service Unit:    %s%n", t.serviceUnitPath());
+            }
+        }
+        out.println();
+        out.println("  \u001B[1;33m⚡ Executable Automation Script Stub:\u001B[0m");
+        out.printf("    \u001B[1m%s\u001B[0m%n", r.scriptPath());
+        out.println();
+        out.println("  👉 \u001B[1mAdd your automation code to the script above:\u001B[0m");
+        out.printf("     \u001B[36mnexus timer edit %s\u001B[0m%n", t != null ? t.id() : fullId);
+        out.printf("     or: ${EDITOR:-nano} %s%n", r.scriptPath());
+        if (r.enableCommand() != null) {
+            out.println();
+            out.printf("  ℹ System activation command: %s%n", r.enableCommand());
+        }
+    }
+
+    private void renderTimerStatus(TimerStatusResult r, PrintWriter out) {
+        if (!r.success() || r.timer() == null) {
+            out.println("\u001B[31m✖ " + r.message() + "\u001B[0m");
+            return;
+        }
+        TimerInfo t = r.timer();
+        out.println("\u001B[1;36m=== Timer Details: " + t.fullIdentifier() + " (" + t.id() + ") ===\u001B[0m");
+        out.printf("  • Name:             %s%n", t.name());
+        out.printf("  • Schedule:         %s (%s)%n", t.scheduleDetails(), t.schedule());
+        out.printf("  • Status:           %s%n", t.active() ? "\u001B[32mActive\u001B[0m" : "\u001B[90mInactive\u001B[0m");
+        out.printf("  • Next Activation:  %s%n", t.nextRun() != null ? t.nextRun() : "-");
+        out.printf("  • Last Trigger:     %s%n", t.lastRun() != null ? t.lastRun() : "-");
+        out.printf("  • Last Exit Code:   %s%n", t.lastResult() != null ? t.lastResult() : "-");
+        out.printf("  • Scope:            %s%n", t.scope().name().toLowerCase());
+        out.printf("  • Script Path:      %s%n", t.scriptPath());
+        if (t.unitPath() != null) {
+            out.printf("  • Timer Unit:       %s%n", t.unitPath());
+        }
+        if (t.serviceUnitPath() != null) {
+            out.printf("  • Service Unit:     %s%n", t.serviceUnitPath());
+        }
+
+        if (r.recentLogs() != null && !r.recentLogs().isEmpty()) {
+            out.println();
+            out.println("  \u001B[1mRecent Journal Execution Logs:\u001B[0m");
+            for (String logLine : r.recentLogs()) {
+                out.println("    " + logLine);
+            }
+        }
+    }
+
+    private void renderTimerUpdate(TimerUpdateResult r, PrintWriter out) {
+        if (!r.success()) {
+            out.println("\u001B[31m✖ Failed to update timer: " + r.message() + "\u001B[0m");
+            return;
+        }
+        TimerInfo t = r.timer();
+        out.println("\u001B[1;32m✓ Timer " + (t != null ? t.fullIdentifier() : "") + " successfully updated!\u001B[0m");
+        if (t != null) {
+            out.printf("  • Schedule: %s (%s)%n", t.scheduleDetails(), t.schedule());
+            if (t.description() != null && !t.description().isBlank()) {
+                out.printf("  • Description: %s%n", t.description());
+            }
+        }
+    }
+
+    private void renderTimerRun(TimerRunResult r, PrintWriter out) {
+        if (!r.success()) {
+            out.println("\u001B[31m✖ Execution Failed (exit code " + r.exitCode() + "): " + r.message() + "\u001B[0m");
+            if (r.output() != null && !r.output().isBlank()) {
+                out.println("  Output:\n" + r.output());
+            }
+            return;
+        }
+        out.println("\u001B[1;32m✓ Task for timer " + r.nameOrId() + " executed successfully (exit code " + r.exitCode() + " in " + r.executionTimeMs() + "ms)\u001B[0m");
+        if (r.output() != null && !r.output().isBlank()) {
+            out.println("  Output:\n" + r.output());
+        }
+    }
+
+    private void renderTimerDelete(TimerDeleteResult r, PrintWriter out) {
+        if (!r.success()) {
+            out.println("\u001B[31m✖ Failed to delete timer: " + r.message() + "\u001B[0m");
+            return;
+        }
+        out.println("\u001B[1;32m✓ Successfully removed scheduled timer: " + r.fullIdentifier() + "\u001B[0m");
+        out.printf("  • Timer Unit Deleted:   %s%n", r.deletedTimerUnit() ? "Yes" : "No");
+        out.printf("  • Service Unit Deleted: %s%n", r.deletedServiceUnit() ? "Yes" : "No");
+        out.printf("  • Script File Deleted:  %s%n", r.deletedScript() ? "Yes" : "Preserved");
     }
 
     private String formatBytes(long bytes) {

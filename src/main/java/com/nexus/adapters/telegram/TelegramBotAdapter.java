@@ -2,6 +2,9 @@ package com.nexus.adapters.telegram;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.nexus.capabilities.network.tailscale.dto.TailscaleOperationRequest;
+import com.nexus.capabilities.scheduler.timer.dto.TimerListRequest;
+import com.nexus.capabilities.scheduler.timer.dto.TimerScope;
+import com.nexus.capabilities.scheduler.timer.dto.TimerStatusRequest;
 import com.nexus.capabilities.storage.zfs.dto.ZfsDatasetDetailRequest;
 import com.nexus.capabilities.system.dto.PowerOperationRequest;
 import com.nexus.config.NexusConfigResolver;
@@ -308,6 +311,12 @@ public class TelegramBotAdapter implements SmartLifecycle {
                 handleConfigReloadCommand(chatId, botToken);
                 break;
 
+            case "/timers":
+            case "/timer":
+            case "/schedule":
+                handleTimerCommand(text, context, chatId, botToken);
+                break;
+
             default:
                 if (command.startsWith("/")) {
                     // Try mapping command directly to capability ID (e.g. /sys_info -> sys.info)
@@ -416,6 +425,16 @@ public class TelegramBotAdapter implements SmartLifecycle {
         }
     }
 
+    private void handleTimerCommand(String text, ExecutionContext context, long chatId, String botToken) {
+        String[] parts = text.trim().split("\\s+");
+        if (parts.length > 1) {
+            String timerId = parts[1].trim();
+            executeAndReply("timer.status", context, new TimerStatusRequest(timerId, TimerScope.USER), chatId, botToken);
+        } else {
+            executeAndReply("timer.list", context, new TimerListRequest(TimerScope.USER), chatId, botToken);
+        }
+    }
+
     private void sendHelpMessage(long chatId, String botToken) {
         String helpHtml = "🛡️ <b>Nexus Host Management Agent</b>\n\n" +
                 "<b>System & Hardware:</b>\n" +
@@ -436,6 +455,7 @@ public class TelegramBotAdapter implements SmartLifecycle {
                 "<b>Network, VPN & Services:</b>\n" +
                 "• /net - Network interfaces, IPs & MACs\n" +
                 "• /services - Installed system services status\n" +
+                "• /timers [id] - List scheduled timers or inspect live timer status\n" +
                 "• /tailscale - Tailscale VPN mesh status & peers\n" +
                 "• /tailscale_up - Connect and bring Tailscale VPN up\n" +
                 "• /tailscale_down - Disconnect Tailscale VPN\n\n" +

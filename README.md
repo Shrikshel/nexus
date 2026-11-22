@@ -20,6 +20,7 @@ It targets **Linux, Windows, and macOS**, running with minimal runtime memory fo
 - **Physical Drive & SMART Telemetry**: Deep drive diagnostics reporting overall health, TBW (Total Bytes Written), Power-On Hours, Unsafe Shutdown counts, and error logs with automatic physical drive filtering.
 - **Tailscale Mesh VPN**: Live connection diagnostics, tailnet IP mapping, peer node status, and privileged network state management (`up` / `down`).
 - **Terminal Multiplexer (`tmux`)**: CLI session lifecycle management (`list`, `new`, `attach`, `kill`) with automatic interactive TTY console handover.
+- **Recurring Timers & Automation Engine**: Scaffolds, configures, and manages systemd timers (Linux), `launchd` agents (macOS), and Windows Task Scheduler tasks. Enforces deterministic sequential identifiers (`NX001-backup-db`), generates executable script stubs with `chmod +x`, provides rich schedule presets (`daily`, `midnight`, `hourly`, `weekly`, `twice-weekly`, `monthly`, `boot`) plus monotonic intervals (`every 15m`, `every 2h`), and launches your editor directly to add automation logic.
 - **Privileged System Power Controls**: Safe host reboot and shutdown operations with mandatory explicit confirmation guards across both CLI (`-y`) and Telegram (`/reboot confirm`).
 - **Defense-in-Depth Security**: Communication daemon runs strictly unprivileged; privileged operations (`smartctl`, `tailscale`, `zfs`, `reboot`, `poweroff`) are isolated via `PrivilegeRunner` with strict binary whitelisting.
 - **Bi-Directional Telegram Adapter**: Supports rich HTML formatting, automatic message splitting (>4096 characters), inbound commands, and proactive threshold alerts (disk degradation, SMART failures, lifecycle events).
@@ -350,7 +351,47 @@ nexus config show
 nexus config reload
 ```
 
-#### 8. Capabilities Introspection & Updates
+#### 8. Recurring Timers & Automation Engine (systemd, launchd, Task Scheduler)
+Manage cross-platform scheduled tasks with zero root privileges (runs in user mode by default with `systemctl --user`):
+
+```bash
+# List all configured timers, schedules, and live execution telemetry
+./nexus timer
+./nexus timer list
+./nexus timer list --json
+
+# Create a scheduled timer with friendly preset (daily, midnight, hourly, weekly, twice-weekly, monthly, boot)
+# Scaffolds ~/.nexus/scripts/NX001-backup-db.sh with executable permissions (0755) and enables systemd timer immediately
+./nexus timer create backup-db --schedule "daily" --desc "Daily PostgreSQL database backup"
+
+# Create a timer with monotonic interval (e.g. every 15m, every 2h, 30s)
+./nexus timer create sync-s3 --schedule "every 15m" --desc "Sync files to S3 bucket"
+
+# Create and immediately open the executable automation script in your editor (nano, vim, code)
+./nexus timer create cert-renew --schedule "weekly" --edit
+
+# Inspect live status, next activation time, and recent systemd journal execution logs
+./nexus timer status NX001
+./nexus timer status backup-db
+
+# Trigger an immediate one-off execution of the timer's script for testing
+./nexus timer run NX001
+
+# Edit the executable script or update the schedule
+./nexus timer edit NX001                      # Opens script in $EDITOR
+./nexus timer edit NX001 --schedule "every 2h" # Updates schedule and reloads daemon
+./nexus timer edit NX001 --timer              # Inspect/edit the systemd .timer unit file
+./nexus timer edit NX001 --print              # Prints exact editor command and path
+
+# Delete a timer (unlinks systemd unit files and unregisters state)
+./nexus timer delete NX001 -y
+./nexus timer delete NX001 --purge-script -y  # Also deletes ~/.nexus/scripts/NX001-backup-db.sh
+
+# Target system-wide daemon scope instead of user scope (requires sudo)
+sudo ./nexus timer create root-cleanup --schedule "daily" --system
+```
+
+#### 9. Capabilities Introspection & Updates
 ```bash
 # Introspect all registered capabilities and their RBAC permissions
 ./nexus capabilities list
@@ -427,6 +468,8 @@ nexus:
 | `/zfs_datasets` | `[type]` | `READ_STORAGE` | OpenZFS dataset hierarchy and mountpoints |
 | `/zfs_snapshots` | `[dataset]` | `READ_STORAGE` | OpenZFS snapshots and referenced storage bytes |
 | `/zfs_get` | `<dataset>` | `READ_STORAGE` | Inspect detailed properties for a specific ZFS dataset |
+| `/services` | — | `READ_SERVICES` | Installed system services status |
+| `/timers` | `[id]` | `READ_SERVICES` | List recurring timers or inspect live timer status & journal logs |
 | `/tailscale` | — | `READ_NETWORK` | Tailscale VPN state, MagicDNS name, tailnet IPs, and peers |
 | `/tailscale_up` | `[args]` | `WRITE_NETWORK` | Connect to Tailscale network (`/tailscale_up --accept-routes`) |
 | `/tailscale_down` | — | `WRITE_NETWORK` | Disconnect from Tailscale network |
@@ -459,7 +502,8 @@ When scheduled health sweeps detect issues, alerts are automatically pushed to T
    Privileged operations are invoked through `PrivilegeRunner`, which validates binaries against a strict whitelist:
    - **SMART Diagnostics**: `/usr/sbin/smartctl`, `/sbin/smartctl`
    - **Mesh VPN**: `/usr/bin/tailscale`, `/bin/tailscale`
-   - **Host Power & Services**: `/sbin/shutdown`, `/sbin/reboot`, `/sbin/poweroff`, `/bin/systemctl`
+   - **Host Power & Services**: `/sbin/shutdown`, `/sbin/reboot`, `/sbin/poweroff`, `/bin/systemctl`, `/usr/bin/systemctl`, `/bin/journalctl`, `/usr/bin/journalctl`
+   - **Scheduled Tasks**: `launchctl`, `schtasks.exe`
    - **OpenZFS Storage**: `/sbin/zfs`, `/usr/sbin/zfs`, `/sbin/zpool`, `/usr/sbin/zpool`
    - **Terminal Multiplexer**: `/usr/bin/tmux`, `/bin/tmux`, `/usr/local/bin/tmux`, `/opt/homebrew/bin/tmux`
 

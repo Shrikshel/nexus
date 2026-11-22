@@ -27,9 +27,23 @@ public class PrivilegeRunner {
             "/usr/local/bin/smartctl",
             "smartctl",
 
-            // Systemctl
+            // Systemctl & Journalctl
             "/bin/systemctl",
             "/usr/bin/systemctl",
+            "systemctl",
+            "/bin/journalctl",
+            "/usr/bin/journalctl",
+            "journalctl",
+
+            // Launchd (macOS)
+            "/bin/launchctl",
+            "/usr/bin/launchctl",
+            "launchctl",
+
+            // Task Scheduler (Windows)
+            "C:\\Windows\\System32\\schtasks.exe",
+            "schtasks.exe",
+            "schtasks",
 
             // Tailscale VPN
             "/usr/bin/tailscale",

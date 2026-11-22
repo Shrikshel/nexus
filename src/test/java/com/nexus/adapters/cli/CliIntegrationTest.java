@@ -330,4 +330,47 @@ class CliIntegrationTest {
         String combined = out.toString() + err.toString();
         assertThat(combined).isNotEmpty();
     }
+
+    @Test
+    @DisplayName("nexus timer defaults to listing scheduled timers")
+    void testTimerDefaultCommand() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("timer");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("=== Scheduled Timers & Automation Tasks");
+    }
+
+    @Test
+    @DisplayName("nexus timer list lists scheduled timers")
+    void testTimerListCommand() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("timer", "list");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("=== Scheduled Timers & Automation Tasks");
+    }
+
+    @Test
+    @DisplayName("nexus timer --json outputs structured JSON report")
+    void testTimerListCommandJson() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("timer", "--json");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("\"capabilityId\" : \"timer.list\"");
+        assertThat(output).contains("\"status\" : \"SUCCESS\"");
+    }
 }

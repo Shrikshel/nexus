@@ -7,6 +7,7 @@ import com.nexus.capabilities.process.dto.ProcessInfo;
 import com.nexus.capabilities.process.dto.ProcessListReport;
 import com.nexus.capabilities.resource.dto.CpuReport;
 import com.nexus.capabilities.resource.dto.MemoryReport;
+import com.nexus.capabilities.scheduler.timer.dto.*;
 import com.nexus.capabilities.service.dto.ServiceListReport;
 import com.nexus.capabilities.service.dto.ServiceUnitInfo;
 import com.nexus.capabilities.storage.dto.DiskListReport;
@@ -83,6 +84,10 @@ public class TelegramFormatter {
             return formatZfsSnapshotList(r);
         } else if (payload instanceof ZfsDatasetDetailReport r) {
             return formatZfsDatasetDetail(r);
+        } else if (payload instanceof TimerListReport r) {
+            return formatTimerList(r);
+        } else if (payload instanceof TimerStatusResult r) {
+            return formatTimerStatus(r);
         }
 
         return "<code>" + escapeHtml(payload.toString()) + "</code>";
@@ -426,6 +431,48 @@ public class TelegramFormatter {
             }
         }
         sb.append("\n<b>Total Properties:</b> ").append(r.properties().size());
+        return sb.toString();
+    }
+
+    private String formatTimerList(TimerListReport r) {
+        StringBuilder sb = new StringBuilder("⏰ <b>Scheduled Timers (")
+                .append(r.scope().name().toLowerCase()).append(" scope)</b>\n\n");
+        if (r.timers().isEmpty()) {
+            sb.append("<i>No timers configured on this host.</i>");
+            return sb.toString();
+        }
+
+        for (TimerInfo t : r.timers()) {
+            sb.append("• <b>").append(escapeHtml(t.id())).append("</b> - <code>")
+              .append(escapeHtml(t.name())).append("</code>\n")
+              .append("  <i>Schedule:</i> ").append(escapeHtml(t.scheduleDetails())).append("\n")
+              .append("  <i>State:</i> ").append(t.active() ? "🟢 Active" : "⚪ Inactive")
+              .append(" | <i>Next:</i> ").append(escapeHtml(t.nextRun() != null ? t.nextRun() : "-")).append("\n\n");
+        }
+        sb.append("<b>Total Timers:</b> ").append(r.count());
+        return sb.toString();
+    }
+
+    private String formatTimerStatus(TimerStatusResult r) {
+        if (!r.success() || r.timer() == null) {
+            return "❌ <i>" + escapeHtml(r.message()) + "</i>";
+        }
+        TimerInfo t = r.timer();
+        StringBuilder sb = new StringBuilder("⏰ <b>Timer: ")
+                .append(escapeHtml(t.fullIdentifier())).append(" (").append(escapeHtml(t.id())).append(")</b>\n\n");
+        sb.append("• <b>Schedule:</b> ").append(escapeHtml(t.scheduleDetails())).append(" (<code>").append(escapeHtml(t.schedule())).append("</code>)\n");
+        sb.append("• <b>Status:</b> ").append(t.active() ? "🟢 Active" : "⚪ Inactive").append("\n");
+        sb.append("• <b>Next Run:</b> ").append(escapeHtml(t.nextRun() != null ? t.nextRun() : "-")).append("\n");
+        sb.append("• <b>Last Run:</b> ").append(escapeHtml(t.lastRun() != null ? t.lastRun() : "-")).append("\n");
+        sb.append("• <b>Script:</b> <code>").append(escapeHtml(t.scriptPath())).append("</code>\n");
+
+        if (r.recentLogs() != null && !r.recentLogs().isEmpty()) {
+            sb.append("\n<b>Recent Logs:</b>\n<pre>");
+            for (String l : r.recentLogs()) {
+                sb.append(escapeHtml(l)).append("\n");
+            }
+            sb.append("</pre>");
+        }
         return sb.toString();
     }
 
