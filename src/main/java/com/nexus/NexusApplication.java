@@ -15,7 +15,7 @@ import picocli.CommandLine.IFactory;
  * Runs in headless mode (no embedded web server).
  */
 @SpringBootApplication
-@ImportRuntimeHints(com.nexus.config.LogbackRuntimeHints.class)
+@ImportRuntimeHints({com.nexus.config.LogbackRuntimeHints.class, com.nexus.config.SchedulerRuntimeHints.class})
 public class NexusApplication implements CommandLineRunner, ExitCodeGenerator {
 
     private final IFactory factory;

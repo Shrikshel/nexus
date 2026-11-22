@@ -3,6 +3,7 @@ package com.nexus.platform.scheduler;
 import com.nexus.capabilities.scheduler.timer.dto.*;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
@@ -81,6 +82,23 @@ public class ScheduledTaskManager {
         if (opt.isPresent()) {
             return Path.of(opt.get().scriptPath());
         }
-        return getActiveProvider().resolveScriptPath(nameOrId, s);
+
+        Path defaultPath = getActiveProvider().resolveScriptPath(nameOrId, s);
+        if (Files.exists(defaultPath)) {
+            return defaultPath;
+        }
+
+        // Fallback: If nameOrId is an ID (e.g. "nx001" or "NX001"), look for "NX001-*.sh" in scripts directory
+        Path scriptsDir = defaultPath.getParent();
+        if (scriptsDir != null && Files.exists(scriptsDir) && nameOrId != null) {
+            String prefix = nameOrId.trim().toLowerCase(java.util.Locale.ROOT) + "-";
+            java.io.File[] matches = scriptsDir.toFile().listFiles((dir, name) ->
+                    name.toLowerCase(java.util.Locale.ROOT).startsWith(prefix) && (name.endsWith(".sh") || name.endsWith(".bat")));
+            if (matches != null && matches.length > 0) {
+                return matches[0].toPath();
+            }
+        }
+
+        return defaultPath;
     }
 }

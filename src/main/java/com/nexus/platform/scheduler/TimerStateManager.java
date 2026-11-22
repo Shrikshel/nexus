@@ -1,6 +1,9 @@
 package com.nexus.platform.scheduler;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -36,13 +39,16 @@ public class TimerStateManager {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record StateFile(
-            int nextSequence,
-            Map<String, TimerRecord> timers
+            @JsonProperty("nextSequence") int nextSequence,
+            @JsonProperty("timers") Map<String, TimerRecord> timers
     ) {
-        public StateFile {
-            if (timers == null) {
-                timers = new LinkedHashMap<>();
-            }
+        @JsonCreator
+        public StateFile(
+                @JsonProperty("nextSequence") int nextSequence,
+                @JsonProperty("timers") Map<String, TimerRecord> timers
+        ) {
+            this.nextSequence = nextSequence <= 0 ? 1 : nextSequence;
+            this.timers = timers != null ? timers : new LinkedHashMap<>();
         }
 
         public StateFile() {
@@ -52,18 +58,45 @@ public class TimerStateManager {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record TimerRecord(
-            String id,
-            String name,
-            String fullIdentifier,
-            String schedule,
-            String scheduleDetails,
-            String description,
-            TimerScope scope,
-            String scriptPath,
-            String unitPath,
-            String serviceUnitPath,
-            Instant createdAt
-    ) {}
+            @JsonProperty("id") String id,
+            @JsonProperty("name") String name,
+            @JsonProperty("fullIdentifier") String fullIdentifier,
+            @JsonProperty("schedule") String schedule,
+            @JsonProperty("scheduleDetails") String scheduleDetails,
+            @JsonProperty("description") String description,
+            @JsonProperty("scope") TimerScope scope,
+            @JsonProperty("scriptPath") String scriptPath,
+            @JsonProperty("unitPath") String unitPath,
+            @JsonProperty("serviceUnitPath") String serviceUnitPath,
+            @JsonProperty("createdAt") Instant createdAt
+    ) {
+        @JsonCreator
+        public TimerRecord(
+                @JsonProperty("id") String id,
+                @JsonProperty("name") String name,
+                @JsonProperty("fullIdentifier") String fullIdentifier,
+                @JsonProperty("schedule") String schedule,
+                @JsonProperty("scheduleDetails") String scheduleDetails,
+                @JsonProperty("description") String description,
+                @JsonProperty("scope") TimerScope scope,
+                @JsonProperty("scriptPath") String scriptPath,
+                @JsonProperty("unitPath") String unitPath,
+                @JsonProperty("serviceUnitPath") String serviceUnitPath,
+                @JsonProperty("createdAt") Instant createdAt
+        ) {
+            this.id = id;
+            this.name = name;
+            this.fullIdentifier = fullIdentifier;
+            this.schedule = schedule;
+            this.scheduleDetails = scheduleDetails;
+            this.description = description;
+            this.scope = scope != null ? scope : TimerScope.USER;
+            this.scriptPath = scriptPath;
+            this.unitPath = unitPath;
+            this.serviceUnitPath = serviceUnitPath;
+            this.createdAt = createdAt != null ? createdAt : Instant.now();
+        }
+    }
 
     public TimerStateManager() {
         this.objectMapper = new ObjectMapper()
@@ -84,15 +117,55 @@ public class TimerStateManager {
         Path path = getStateFilePath(scope);
         if (Files.exists(path)) {
             try {
-                StateFile sf = objectMapper.readValue(path.toFile(), StateFile.class);
-                if (sf != null) {
-                    return new StateFile(sf.nextSequence(), sf.timers() != null ? sf.timers() : new LinkedHashMap<>());
+                // Parse using JsonNode to be 100% immune to native-image reflection issues
+                JsonNode root = objectMapper.readTree(path.toFile());
+                if (root != null && root.isObject()) {
+                    return parseStateNode(root);
                 }
             } catch (Exception e) {
                 log.warn("Could not read timer state file at {}: {}. Auto-healing...", path, e.getMessage());
             }
         }
         return new StateFile(1, new LinkedHashMap<>());
+    }
+
+    private StateFile parseStateNode(JsonNode root) {
+        int nextSeq = root.path("nextSequence").asInt(1);
+        Map<String, TimerRecord> timers = new LinkedHashMap<>();
+        JsonNode timersNode = root.path("timers");
+        if (timersNode != null && timersNode.isObject()) {
+            var it = timersNode.fields();
+            while (it.hasNext()) {
+                var entry = it.next();
+                JsonNode node = entry.getValue();
+                if (node != null && node.isObject()) {
+                    String id = node.path("id").asText(entry.getKey());
+                    String name = node.path("name").asText("");
+                    String fullId = node.path("fullIdentifier").asText(id + (!name.isBlank() ? "-" + name : ""));
+                    String schedule = node.path("schedule").asText("");
+                    String scheduleDetails = node.path("scheduleDetails").asText("");
+                    String description = node.path("description").asText("");
+                    String scopeStr = node.path("scope").asText("USER");
+                    TimerScope scope = "SYSTEM".equalsIgnoreCase(scopeStr) ? TimerScope.SYSTEM : TimerScope.USER;
+                    String scriptPath = node.path("scriptPath").asText("");
+                    String unitPath = node.path("unitPath").asText("");
+                    String serviceUnitPath = node.path("serviceUnitPath").asText("");
+                    String createdAtStr = node.path("createdAt").asText(null);
+                    Instant createdAt = Instant.now();
+                    if (createdAtStr != null && !createdAtStr.isBlank()) {
+                        try {
+                            createdAt = Instant.parse(createdAtStr);
+                        } catch (Exception ignored) {}
+                    }
+                    TimerRecord rec = new TimerRecord(
+                            id, name, fullId, schedule, scheduleDetails, description,
+                            scope, scriptPath, unitPath, serviceUnitPath, createdAt
+                    );
+                    timers.put(id.toUpperCase(Locale.ROOT), rec);
+                }
+            }
+        }
+        return new StateFile(nextSeq, timers);
     }
 
     public synchronized void saveState(TimerScope scope, StateFile state) {
