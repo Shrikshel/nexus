@@ -295,11 +295,40 @@ nexus daemon disable                    # Disable auto-start on boot
 # Gracefully stop the running background daemon (via supervisor or IPC)
 nexus daemon stop
 
+# Stream live daemon logs in real time
+nexus daemon logs -f
+
 # Completely uninstall daemon service and remove supervisor unit files
 nexus daemon uninstall
 ```
 
-#### 3. OpenZFS Storage Management
+#### 3. PM2-Style Synchronized Log Management (`nexus logs` / `nx logs`)
+Nexus centralizes all application telemetry and audit logs into a single canonical directory (`~/.nexus/logs/` for user scope or `/var/log/nexus/` for system scope). It features PM2-style automatic log rotation (10MB chunks, gzip `.gz` compression, 14-day retention, and 500MB total size cap):
+
+```bash
+# View last 30 lines of application logs (default)
+nexus logs
+
+# View custom line count
+nexus logs -n 50
+
+# Stream and follow live log updates in real-time (like 'tail -f' or 'pm2 logs')
+nexus logs -f
+
+# Inspect the tamper-evident audit trail log
+nexus logs --audit
+
+# List all active log files, file sizes, and compressed rotated archives
+nexus logs --list
+
+# Truncate / flush active log files without restarting services (like 'pm2 flush')
+nexus logs --flush
+
+# Print the active canonical log directory path
+nexus logs --path
+```
+
+#### 4. OpenZFS Storage Management
 ```bash
 # List all configured ZFS storage pools and health states
 ./nexus zfs pools
@@ -587,7 +616,7 @@ When scheduled health sweeps detect issues, alerts are automatically pushed to T
 6. **Role-Based Access Control (RBAC)**:
    Fine-grained permissions (`READ_SYSTEM`, `READ_STORAGE`, `WRITE_NETWORK`, `WRITE_PROCESSES`, `ADMIN_POWER`) ensure callers only access authorized capabilities.
 
-7. **Audit Logging**: Every capability invocation records an audit log entry in `logs/nexus-audit.log`:
+7. **Audit Logging**: Every capability invocation records an audit log entry in `~/.nexus/logs/nexus-audit.log`:
    ```
    2026-11-13 09:05:15.123 AUDIT_SUCCESS invocationId=... source=CLI subjectId=cli-local username=admin capability=disk.list durationMs=8
    ```

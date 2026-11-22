@@ -29,7 +29,7 @@ import java.util.concurrent.Callable;
 @Command(
     name = "daemon",
     aliases = {"d"},
-    description = "Manage the Nexus background daemon service (install, enable, disable, start, stop, status, uninstall)",
+    description = "Manage the Nexus background daemon service (install, enable, disable, start, stop, status, logs, uninstall)",
     subcommands = {
         DaemonCommand.InstallSubcommand.class,
         DaemonCommand.EnableSubcommand.class,
@@ -37,6 +37,7 @@ import java.util.concurrent.Callable;
         DaemonCommand.StartSubcommand.class,
         DaemonCommand.StopSubcommand.class,
         DaemonCommand.StatusSubcommand.class,
+        DaemonCommand.LogsSubcommand.class,
         DaemonCommand.UninstallSubcommand.class
     },
     mixinStandardHelpOptions = true
@@ -47,6 +48,9 @@ public class DaemonCommand implements Callable<Integer> {
 
     @Spec
     private CommandSpec spec;
+
+    @ParentCommand
+    private com.nexus.adapters.cli.NexusCliRootCommand root;
 
     private final DaemonIpcServer ipcServer;
     private final DaemonIpcClient ipcClient;
@@ -84,6 +88,10 @@ public class DaemonCommand implements Callable<Integer> {
 
     public DaemonServiceManager getServiceManager() {
         return serviceManager;
+    }
+
+    public com.nexus.adapters.cli.NexusCliRootCommand getRoot() {
+        return root;
     }
 
     @Override
@@ -308,12 +316,12 @@ public class DaemonCommand implements Callable<Integer> {
                         out.printf("  ✓ Telegram bot  : ACTIVE (polling for authorized chat ID: %d)%n", tg.getAllowedChatId());
                         log.info("Telegram bot adapter is running and polling for chat ID {}", tg.getAllowedChatId());
                     } else {
-                        out.println("  ✗ Telegram bot  : FAILED to start (see logs/nexus.log for details)");
+                        out.println("  ✗ Telegram bot  : FAILED to start (see " + com.nexus.platform.logging.NexusLogManager.getAppLogFile() + " for details)");
                     }
                 }
 
-                out.println("  ✓ Application logs: logs/nexus.log");
-                out.println("  ✓ Audit trail     : logs/nexus-audit.log");
+                out.println("  ✓ Application logs: " + com.nexus.platform.logging.NexusLogManager.getAppLogFile());
+                out.println("  ✓ Audit trail     : " + com.nexus.platform.logging.NexusLogManager.getAuditLogFile());
                 out.println("  Press Ctrl+C or run 'nexus daemon stop' to terminate.");
 
                 // Keep main daemon thread alive
@@ -439,6 +447,61 @@ public class DaemonCommand implements Callable<Integer> {
     }
 
     // 7. UNINSTALL
+    @Component
+    @Command(
+        name = "logs",
+        aliases = {"log"},
+        description = "Inspect, follow, stream, and manage daemon application and audit logs (PM2-style)",
+        mixinStandardHelpOptions = true
+    )
+    public static class LogsSubcommand implements Callable<Integer> {
+        @Spec
+        private CommandSpec spec;
+
+        @ParentCommand
+        private DaemonCommand parent;
+
+        @Option(names = {"-n", "--lines"}, description = "Number of lines to show (default: 30)", defaultValue = "30")
+        private int lines = 30;
+
+        @Option(names = {"-f", "--follow"}, description = "Stream and follow log updates in real-time (Ctrl+C to exit)")
+        private boolean follow;
+
+        @Option(names = {"-a", "--audit"}, description = "Inspect the tamper-evident audit log (nexus-audit.log) instead of application log")
+        private boolean audit;
+
+        @Option(names = {"--clear", "--flush"}, description = "Flush / truncate active log files (like 'pm2 flush')")
+        private boolean flush;
+
+        @Option(names = {"-l", "--list"}, description = "List all log files, active sizes, and rotated archives")
+        private boolean list;
+
+        @Option(names = {"-p", "--path"}, description = "Display the absolute path to the canonical log directory")
+        private boolean showPath;
+
+        @Option(names = {"--raw"}, description = "Output raw log lines without decorative banners")
+        private boolean raw;
+
+        @Override
+        public Integer call() {
+            LogsCommand cmd = new LogsCommand(parent != null ? parent.getRoot() : null);
+            picocli.CommandLine cmdLine = new picocli.CommandLine(cmd);
+            if (spec != null) {
+                cmdLine.setOut(spec.commandLine().getOut());
+                cmdLine.setErr(spec.commandLine().getErr());
+            }
+            java.util.List<String> args = new java.util.ArrayList<>();
+            args.add("-n=" + lines);
+            if (follow) args.add("-f");
+            if (audit) args.add("-a");
+            if (flush) args.add("--flush");
+            if (list) args.add("-l");
+            if (showPath) args.add("-p");
+            if (raw) args.add("--raw");
+            return cmdLine.execute(args.toArray(new String[0]));
+        }
+    }
+
     @Component
     @Command(
         name = "uninstall",

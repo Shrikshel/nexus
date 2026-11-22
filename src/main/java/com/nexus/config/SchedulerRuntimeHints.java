@@ -48,7 +48,8 @@ public class SchedulerRuntimeHints implements RuntimeHintsRegistrar {
                 AuditCheckItem.class,
                 SystemAuditReport.class,
                 ServiceOperationResult.class,
-                ServiceStatusDetails.class
+                ServiceStatusDetails.class,
+                com.nexus.platform.logging.NexusLogManager.LogFileInfo.class
         };
 
         for (Class<?> clazz : reflectionClasses) {

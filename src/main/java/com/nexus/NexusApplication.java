@@ -28,6 +28,7 @@ public class NexusApplication implements CommandLineRunner, ExitCodeGenerator {
     }
 
     public static void main(String[] args) {
+        com.nexus.platform.logging.NexusLogManager.initEarly();
         com.nexus.platform.HostTimezoneResolver.initHostTimezone();
         java.io.File resolvedConfigFile = com.nexus.config.NexusConfigResolver.resolveConfigFile(args);
         com.nexus.config.NexusConfigResolver.applySpringConfigProperties(resolvedConfigFile);

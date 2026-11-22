@@ -165,6 +165,7 @@ public class UninstallCommand implements Callable<Integer> {
         // 4. Purge configurations and logs if requested
         if (purge) {
             Path[] purgeTargets = new Path[] {
+                    com.nexus.platform.logging.NexusLogManager.getLogDirectory(),
                     Path.of("logs"),
                     Path.of("/var/log/nexus"),
                     Path.of(System.getProperty("user.home"), ".nexus"),

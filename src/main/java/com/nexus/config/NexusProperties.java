@@ -15,8 +15,17 @@ public class NexusProperties {
     private String mode = "cli";
     private Duration defaultTimeout = Duration.ofSeconds(30);
     private boolean auditEnabled = true;
+    private String logDir;
 
     private TelegramConfig telegram = new TelegramConfig();
+
+    public String getLogDir() {
+        return logDir;
+    }
+
+    public void setLogDir(String logDir) {
+        this.logDir = logDir;
+    }
 
     public String getMode() {
         return mode;

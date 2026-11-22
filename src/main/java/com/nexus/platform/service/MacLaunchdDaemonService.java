@@ -55,6 +55,10 @@ public class MacLaunchdDaemonService implements DaemonServiceProvider {
     @Override
     public ServiceOperationResult installService(boolean systemScope, boolean enable, String binaryPath) {
         Path plistPath = resolvePlistPath(systemScope);
+        Path logDir = com.nexus.platform.logging.NexusLogManager.getLogDirectory();
+        Path stdoutLog = logDir.resolve("nexus-stdout.log");
+        Path stderrLog = logDir.resolve("nexus-stderr.log");
+
         String plistContent = String.format("""
                 <?xml version="1.0" encoding="UTF-8"?>
                 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -74,12 +78,12 @@ public class MacLaunchdDaemonService implements DaemonServiceProvider {
                     <key>KeepAlive</key>
                     <true/>
                     <key>StandardOutPath</key>
-                    <string>/tmp/nexus-daemon.log</string>
+                    <string>%s</string>
                     <key>StandardErrorPath</key>
-                    <string>/tmp/nexus-daemon.err</string>
+                    <string>%s</string>
                 </dict>
                 </plist>
-                """, LABEL, binaryPath, enable ? "true" : "false");
+                """, LABEL, binaryPath, enable ? "true" : "false", stdoutLog, stderrLog);
 
         try {
             Files.createDirectories(plistPath.getParent());

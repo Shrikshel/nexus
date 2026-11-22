@@ -546,4 +546,41 @@ class CliIntegrationTest {
         assertThat(output).contains("--dry-run");
         assertThat(output).contains("--yes");
     }
+
+    @Test
+    @DisplayName("nexus logs --help displays options")
+    void testLogsHelp() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("logs", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus logs");
+        assertThat(output).contains("--follow");
+        assertThat(output).contains("--audit");
+        assertThat(output).contains("--flush");
+        assertThat(output).contains("--list");
+        assertThat(output).contains("--path");
+    }
+
+    @Test
+    @DisplayName("nexus daemon logs --help displays options")
+    void testDaemonLogsHelp() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("daemon", "logs", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus daemon logs");
+        assertThat(output).contains("--follow");
+        assertThat(output).contains("--audit");
+        assertThat(output).contains("--flush");
+        assertThat(output).contains("--list");
+    }
 }

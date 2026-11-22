@@ -33,8 +33,11 @@ public final class NexusConfigResolver {
               # Default execution timeout for capabilities (e.g. 30s, 60s, 2m)
               default-timeout: 30s
             
-              # Enable audit logging to logs/nexus-audit.log
+              # Enable audit logging to nexus-audit.log
               audit-enabled: true
+
+              # Centralized log directory (defaults to ~/.nexus/logs or /var/log/nexus)
+              # log-dir: ~/.nexus/logs
             
               # Remote bi-directional Telegram management adapter
               telegram:
@@ -188,6 +191,15 @@ public final class NexusConfigResolver {
             }
             if (nexusMap.containsKey("audit-enabled")) {
                 properties.setAuditEnabled(Boolean.parseBoolean(String.valueOf(nexusMap.get("audit-enabled"))));
+            }
+
+            if (nexusMap.containsKey("log-dir") || nexusMap.containsKey("logDir")) {
+                Object logDirVal = nexusMap.containsKey("log-dir") ? nexusMap.get("log-dir") : nexusMap.get("logDir");
+                if (logDirVal != null && !String.valueOf(logDirVal).isBlank()) {
+                    String custom = String.valueOf(logDirVal).trim();
+                    properties.setLogDir(custom);
+                    com.nexus.platform.logging.NexusLogManager.setLogDirectory(java.nio.file.Path.of(custom));
+                }
             }
 
             Object tgObj = nexusMap.get("telegram");

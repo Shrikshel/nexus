@@ -174,5 +174,13 @@
     "allDeclaredMethods": true,
     "allPublicMethods": true,
     "allDeclaredFields": true
+  },
+  {
+    "name": "com.nexus.platform.logging.NexusLogManager$LogFileInfo",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
   }
 ]

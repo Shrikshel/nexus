@@ -42,6 +42,16 @@ public class LogbackRuntimeHints implements RuntimeHintsRegistrar {
                 ch.qos.logback.core.ConsoleAppender.class,
                 ch.qos.logback.core.rolling.RollingFileAppender.class,
                 ch.qos.logback.core.rolling.TimeBasedRollingPolicy.class,
+                ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy.class,
+                ch.qos.logback.core.rolling.SizeAndTimeBasedFileNamingAndTriggeringPolicy.class,
+                ch.qos.logback.core.util.FileSize.class,
+                ch.qos.logback.core.rolling.DefaultTimeBasedFileNamingAndTriggeringPolicy.class,
+                ch.qos.logback.core.rolling.TimeBasedFileNamingAndTriggeringPolicyBase.class,
+                ch.qos.logback.core.rolling.helper.Compressor.class,
+                ch.qos.logback.core.rolling.helper.ArchiveRemover.class,
+                ch.qos.logback.core.rolling.helper.SizeAndTimeBasedArchiveRemover.class,
+                ch.qos.logback.core.rolling.helper.TimeBasedArchiveRemover.class,
+                ch.qos.logback.core.rolling.helper.FileFilterUtil.class,
                 ch.qos.logback.classic.filter.ThresholdFilter.class
         };
 

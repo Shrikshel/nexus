@@ -23,6 +23,7 @@ import java.util.concurrent.Callable;
     subcommands = {
         SystemCommand.class,
         DaemonCommand.class,
+        LogsCommand.class,
         com.nexus.adapters.cli.commands.TimerCommand.class,
         com.nexus.adapters.cli.commands.TelegramCommand.class,
         TailscaleCommand.class,
