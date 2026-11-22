@@ -95,4 +95,15 @@ class NexusConfigResolverTest {
         assertTrue(target.exists());
         assertTrue(target.length() > 0);
     }
+
+    @Test
+    void testNormalizePath() {
+        File fileWithDot = new File("/home/toy/.nexus/./config.yml");
+        File normalized = NexusConfigResolver.normalize(fileWithDot);
+        assertNotNull(normalized);
+        assertEquals("/home/toy/.nexus/config.yml", normalized.getAbsolutePath());
+        assertFalse(normalized.getAbsolutePath().contains("/./"));
+
+        assertNull(NexusConfigResolver.normalize(null));
+    }
 }

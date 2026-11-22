@@ -58,11 +58,11 @@ public class ConfigCommand implements Callable<Integer> {
      */
     static String resolveExplicitConfigPath(CommandSpec spec, String localOption) {
         if (localOption != null && !localOption.isBlank()) {
-            return localOption;
+            return NexusConfigResolver.normalize(new File(localOption)).getAbsolutePath();
         }
         if (spec != null && spec.root() != null && spec.root().commandLine().getCommand() instanceof NexusCliRootCommand root) {
             if (root.getConfigFile() != null) {
-                return root.getConfigFile().getAbsolutePath();
+                return NexusConfigResolver.normalize(root.getConfigFile()).getAbsolutePath();
             }
         }
         return null;
@@ -442,7 +442,7 @@ public class ConfigCommand implements Callable<Integer> {
 
             String explicitPath = resolveExplicitConfigPath(spec, targetFileOption);
             File configFile = NexusConfigResolver.resolveTargetConfigFileForEditing(explicitPath);
-            out.println(configFile.getAbsolutePath());
+            out.println(NexusConfigResolver.normalize(configFile).getAbsolutePath());
             return 0;
         }
     }

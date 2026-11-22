@@ -68,6 +68,16 @@ public final class NexusConfigResolver {
     private NexusConfigResolver() {}
 
     /**
+     * Normalizes a File to an absolute, clean path (resolving '.', '..', and redundant separators).
+     */
+    public static File normalize(File file) {
+        if (file == null) {
+            return null;
+        }
+        return file.toPath().toAbsolutePath().normalize().toFile();
+    }
+
+    /**
      * Resolves the configuration file from CLI arguments or default paths.
      * Exits early with an error message if an explicitly passed configuration file is missing.
      *
@@ -78,13 +88,13 @@ public final class NexusConfigResolver {
         String explicitPath = extractConfigFileArgument(args);
 
         if (explicitPath != null) {
-            File explicitFile = new File(explicitPath);
+            File explicitFile = normalize(new File(explicitPath));
             if (explicitFile.exists() && explicitFile.isFile()) {
                 return explicitFile;
             }
 
             // Check common extension swap (.yml <-> .yaml)
-            File altFile = getAlternativeExtensionFile(explicitPath);
+            File altFile = normalize(getAlternativeExtensionFile(explicitPath));
             if (altFile != null && altFile.exists() && altFile.isFile()) {
                 System.out.printf("\u001B[33m[NOTICE] Using '%s' instead of requested '%s'\u001B[0m%n",
                         altFile.getPath(), explicitPath);
@@ -98,7 +108,7 @@ public final class NexusConfigResolver {
 
         // Check standard default locations
         for (String location : DEFAULT_CONFIG_LOCATIONS) {
-            File candidate = new File(location);
+            File candidate = normalize(new File(location));
             if (candidate.exists() && candidate.isFile()) {
                 return candidate;
             }
@@ -115,16 +125,16 @@ public final class NexusConfigResolver {
      */
     public static File resolveTargetConfigFileForEditing(String explicitPath) {
         if (explicitPath != null && !explicitPath.isBlank()) {
-            return new File(explicitPath);
+            return normalize(new File(explicitPath));
         }
 
         String resolved = getResolvedConfigPath();
         if (resolved != null && !resolved.isBlank()) {
-            return new File(resolved);
+            return normalize(new File(resolved));
         }
 
         for (String loc : DEFAULT_CONFIG_LOCATIONS) {
-            File f = new File(loc);
+            File f = normalize(new File(loc));
             if (f.exists() && f.isFile()) {
                 return f;
             }
@@ -133,11 +143,11 @@ public final class NexusConfigResolver {
         // If running as root or /etc/nexus exists/writable, prefer /etc/nexus/config.yml
         File etcDir = new File("/etc/nexus");
         if (etcDir.exists() && etcDir.canWrite()) {
-            return new File(etcDir, "config.yml");
+            return normalize(new File(etcDir, "config.yml"));
         }
 
         // Standard user fallback
-        return new File(System.getProperty("user.home") + "/.nexus/config.yml");
+        return normalize(new File(System.getProperty("user.home") + "/.nexus/config.yml"));
     }
 
     /**
@@ -284,7 +294,7 @@ public final class NexusConfigResolver {
         System.setProperty("spring.config.name", "application,config,nexus");
 
         if (configFile != null && configFile.exists()) {
-            String absPath = configFile.getAbsolutePath();
+            String absPath = normalize(configFile).getAbsolutePath();
             System.setProperty(PROPERTY_CONFIG_FILE, absPath);
             // Instruct Spring Boot ConfigDataEnvironmentPostProcessor to load this file
             System.setProperty("spring.config.additional-location", "file:" + absPath);

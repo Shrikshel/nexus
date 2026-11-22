@@ -61,10 +61,10 @@ public class NexusCliRootCommand implements Callable<Integer> {
         if (configFile == null) {
             String resolved = com.nexus.config.NexusConfigResolver.getResolvedConfigPath();
             if (resolved != null) {
-                return new File(resolved);
+                return com.nexus.config.NexusConfigResolver.normalize(new File(resolved));
             }
         }
-        return configFile;
+        return com.nexus.config.NexusConfigResolver.normalize(configFile);
     }
 
     public void reset() {
