@@ -91,14 +91,37 @@ public class NexusUpdateService {
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-        if (response.statusCode() == 404) {
+        JsonNode root;
+        if (response.statusCode() == 404 && targetTag.isEmpty()) {
+            // Fallback: If /releases/latest returned 404 (e.g. GitHub excludes pre-releases/snapshots),
+            // query the releases list API to fetch the most recent release
+            String listApiUrl = "https://api.github.com/repos/" + effectiveRepo + "/releases";
+            HttpRequest listRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(listApiUrl))
+                    .header("User-Agent", "Nexus-Agent/" + CURRENT_VERSION)
+                    .header("Accept", "application/vnd.github.v3+json")
+                    .timeout(Duration.ofSeconds(15))
+                    .GET()
+                    .build();
+            HttpResponse<String> listResponse = httpClient.send(listRequest, HttpResponse.BodyHandlers.ofString());
+            if (listResponse.statusCode() == 200) {
+                JsonNode array = objectMapper.readTree(listResponse.body());
+                if (array.isArray() && !array.isEmpty()) {
+                    root = array.get(0);
+                } else {
+                    throw new FileNotFoundException("Release not found on repository '" + effectiveRepo + "'");
+                }
+            } else {
+                throw new FileNotFoundException("Release not found on repository '" + effectiveRepo + "'");
+            }
+        } else if (response.statusCode() == 404) {
             throw new FileNotFoundException("Release not found on repository '" + effectiveRepo + "'");
-        }
-        if (response.statusCode() >= 400) {
+        } else if (response.statusCode() >= 400) {
             throw new IOException("GitHub API error (HTTP " + response.statusCode() + "): " + response.body());
+        } else {
+            root = objectMapper.readTree(response.body());
         }
 
-        JsonNode root = objectMapper.readTree(response.body());
         String tagName = root.path("tag_name").asText("");
         String htmlUrl = root.path("html_url").asText("");
 
@@ -137,7 +160,11 @@ public class NexusUpdateService {
         String curr = currentVersion.startsWith("v") ? currentVersion.substring(1) : currentVersion;
         String latest = latestVersion.startsWith("v") ? latestVersion.substring(1) : latestVersion;
 
-        // Dev/snapshot builds always consider release builds newer
+        if (curr.equalsIgnoreCase(latest)) {
+            return false;
+        }
+
+        // Dev/snapshot builds consider release builds newer
         if (curr.contains("SNAPSHOT")) {
             return true;
         }

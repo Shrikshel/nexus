@@ -105,14 +105,16 @@ public class UninstallCommand implements Callable<Integer> {
 
         // 2. Remove executable binary and any duplicates across standard paths
         boolean binaryRemoved = false;
+        boolean hasPermissionError = false;
         String binaryStatus = "NOT_FOUND";
-        Path[] searchLocations = new Path[] {
-                binaryPath,
-                Path.of("/usr/local/bin/nexus"),
-                Path.of("/usr/bin/nexus"),
-                Path.of(System.getProperty("user.home"), ".local", "bin", "nexus"),
-                Path.of(System.getProperty("user.home"), "bin", "nexus")
-        };
+        java.util.Set<Path> searchLocations = new java.util.LinkedHashSet<>();
+        if (binaryPath != null) {
+            searchLocations.add(binaryPath.toAbsolutePath().normalize());
+        }
+        searchLocations.add(Path.of("/usr/local/bin/nexus"));
+        searchLocations.add(Path.of("/usr/bin/nexus"));
+        searchLocations.add(Path.of(System.getProperty("user.home"), ".local", "bin", "nexus"));
+        searchLocations.add(Path.of(System.getProperty("user.home"), "bin", "nexus"));
 
         for (Path p : searchLocations) {
             if (p != null && Files.exists(p)) {
@@ -122,6 +124,7 @@ public class UninstallCommand implements Callable<Integer> {
                     binaryStatus = "REMOVED";
                     if (!jsonMode) out.println("  ✓ Removed executable: " + p);
                 } catch (Exception e) {
+                    hasPermissionError = true;
                     binaryStatus = "FAILED: " + e.getMessage();
                     if (!jsonMode) {
                         err.println("  ✗ Failed to delete executable: " + p + " (" + e.getMessage() + ")");
@@ -131,7 +134,7 @@ public class UninstallCommand implements Callable<Integer> {
             }
         }
 
-        if (!binaryRemoved && !jsonMode) {
+        if (!binaryRemoved && !hasPermissionError && !jsonMode) {
             out.println("  • Executable binary not found in standard paths (already removed or running in IDE/JAR)");
         }
 
@@ -182,15 +185,21 @@ public class UninstallCommand implements Callable<Integer> {
             map.put("binaryRemoved", binaryRemoved);
             map.put("runtimeCleaned", runtimeCleaned);
             map.put("purge", purge);
-            map.put("success", true);
+            map.put("success", !hasPermissionError);
             try {
                 out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(map));
             } catch (Exception ignored) {}
         } else {
-            out.println("\n✓ Nexus uninstallation complete.");
+            if (hasPermissionError) {
+                err.println("\n✗ Nexus uninstallation was incomplete due to permission errors.");
+                err.println("  Please re-run with elevated privileges: sudo nexus uninstall" + (purge ? " --all" : ""));
+                return 1;
+            } else {
+                out.println("\n✓ Nexus uninstallation complete.");
+            }
         }
 
-        return 0;
+        return hasPermissionError ? 1 : 0;
     }
 
     private static void deleteRecursively(File file) {
