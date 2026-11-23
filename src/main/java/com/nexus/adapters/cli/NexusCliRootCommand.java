@@ -2,6 +2,7 @@ package com.nexus.adapters.cli;
 
 import com.nexus.adapters.cli.commands.*;
 import org.springframework.stereotype.Component;
+import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
@@ -46,7 +47,7 @@ public class NexusCliRootCommand implements Callable<Integer> {
     @Option(names = {"-v", "--verbose"}, description = "Enable verbose debug output", scope = picocli.CommandLine.ScopeType.INHERIT)
     private boolean verbose;
 
-    @Option(names = {"-c", "--config"}, description = "Path to custom configuration file", scope = picocli.CommandLine.ScopeType.INHERIT)
+    @Option(names = {"-c", "--config"}, paramLabel = "<path>", description = "Path to custom configuration file (YAML)", scope = picocli.CommandLine.ScopeType.INHERIT)
     private File configFile;
 
     public boolean isJson() {
@@ -76,7 +77,9 @@ public class NexusCliRootCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         if (spec != null) {
-            spec.commandLine().usage(spec.commandLine().getOut());
+            CommandLine cmd = spec.commandLine();
+            NexusCliHelpCustomizer.customize(cmd);
+            cmd.usage(cmd.getOut());
         }
         return 0;
     }

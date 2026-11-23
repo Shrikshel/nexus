@@ -219,8 +219,14 @@ curl -fsSL https://raw.githubusercontent.com/Shrikshel/nexus/main/scripts/uninst
 ### Run Commands Directly
 Use the included `./nexus` wrapper script (or the compiled native binary `./target/nexus`).
 
-#### Command Aliases
-For fast and convenient command line invocation, Nexus supports short command aliases:
+#### Command Aliases & Enterprise CLI Formatting
+Nexus follows modern CLI standards inspired by tools like GitHub CLI (`gh`), Docker, and Google Cloud SDK (`gcloud`):
+- **Structured Command Categories**: Commands are logically grouped into `CORE & SYSTEM`, `AUTOMATION & SERVICES`, `STORAGE & WORKSPACES`, and `AGENT CONFIGURATION`.
+- **Dynamic Terminal Width**: Automatically detects terminal columns (`$COLUMNS` / `tput cols`) with bounded wrapping (110–140 cols) so descriptions never awkwardly truncate.
+- **ANSI Multi-Color Styling**: Bold yellow section headings, bright cyan command verbs, bright green flags, magenta argument metavars, and bright blue aliases.
+- **Prominent Alias Introspection**: Subcommands cleanly display all registered aliases in an `ALIASES` section when inspecting help (`nx <command> --help`).
+
+For fast and convenient command-line invocation, Nexus also supports root aliases:
 - `nx` (recommended short alias)
 - `n` (ultra-compact alias)
 - `nxs`

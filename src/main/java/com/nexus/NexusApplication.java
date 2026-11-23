@@ -46,6 +46,7 @@ public class NexusApplication implements CommandLineRunner, ExitCodeGenerator {
     public void run(String... args) {
         CommandLine commandLine = new CommandLine(rootCommand, factory);
         commandLine.setCaseInsensitiveEnumValuesAllowed(true);
+        com.nexus.adapters.cli.NexusCliHelpCustomizer.customize(commandLine);
         this.exitCode = commandLine.execute(args);
     }
 
