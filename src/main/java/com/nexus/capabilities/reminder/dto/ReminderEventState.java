@@ -1,16 +1,20 @@
 package com.nexus.capabilities.reminder.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Instant;
 
 /**
  * Active operational state of a reminder event.
  */
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record ReminderEventState(
-        String activeCycle,
-        String status,
-        String lastDispatchedStage,
-        String nextStage,
-        Instant nextTriggerAt
+        @JsonProperty("activeCycle") String activeCycle,
+        @JsonProperty("status") String status,
+        @JsonProperty("lastDispatchedStage") String lastDispatchedStage,
+        @JsonProperty("nextStage") String nextStage,
+        @JsonProperty("nextTriggerAt") Instant nextTriggerAt
 ) {
     public static ReminderEventState initial(String cycle, String nextStage, Instant nextTriggerAt) {
         return new ReminderEventState(cycle, "ACTIVE", null, nextStage, nextTriggerAt);

@@ -44,6 +44,7 @@ public class ReminderStorageManager {
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
                 .enable(SerializationFeature.INDENT_OUTPUT)
                 .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+                .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL);
     }
 
