@@ -480,8 +480,11 @@ class CliIntegrationTest {
         // Returns 0 if already installed on host, or 1 with error guidance
         if (exitCode == 1) {
             String errorOutput = err.toString();
-            assertThat(errorOutput).contains("Error: Nexus daemon service is not installed.");
-            assertThat(errorOutput).contains("nexus daemon install");
+            assertThat(errorOutput).containsAnyOf(
+                    "Error: Nexus daemon service is not installed.",
+                    "Error: Starting the background daemon requires root privileges."
+            );
+            assertThat(errorOutput).contains("nexus daemon");
         } else {
             assertThat(exitCode).isEqualTo(0);
         }

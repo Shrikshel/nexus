@@ -279,33 +279,32 @@ sudo nexus system poweroff -y -d 5 -r "Maintenance window"
 ```
 
 #### 2. Nexus Background Daemon Management (`nexus daemon` / `nexus d`)
-Natively manages the OS background service supervisor (Linux `systemd`, macOS `launchd`, Windows `Task Scheduler`) providing 24/7 Telegram bot polling, health monitoring, and authenticated local loopback IPC (`127.0.0.1:29786`):
+Natively manages the OS background service supervisor (Linux `systemd`, macOS `launchd`, Windows `Task Scheduler`) providing 24/7 Telegram bot polling, health monitoring, and authenticated local loopback IPC (`127.0.0.1:29786`). To prevent Telegram bot polling collisions (HTTP 409) and ensure 24/7 host automation, the daemon runs as a root system service:
 
 ```bash
-# Install and enable the daemon background service (does NOT start immediately)
-nexus daemon install                    # User scope: zero-root (~/.config/systemd/user/nexus.service)
-sudo nexus daemon install --system      # System scope: multi-user (/etc/systemd/system/nexus.service)
+# Install and enable the daemon system background service (does NOT start immediately)
+sudo nexus daemon install               # Installs /etc/systemd/system/nexus.service & cleans up legacy user units
 
-# Start the background daemon service (automatically ensures enabled; fails if not installed)
-nexus daemon start                      # Runs headlessly under systemd/launchd
-nexus daemon start --foreground         # Run directly in foreground terminal for debugging
+# Start the background daemon service as root (automatically ensures enabled; fails if not installed)
+sudo nexus daemon start                 # Runs headlessly as a 24/7 system service
+sudo nexus daemon start -f              # Run directly in foreground terminal for debugging
 
-# Query supervisor and IPC operational status
+# Query supervisor and IPC operational status (can be run from any user shell)
 nexus daemon status
 nexus daemon status --json
 
 # Enable or disable auto-start on host boot
-nexus daemon enable                     # Auto-start on boot
-nexus daemon disable                    # Disable auto-start on boot
+sudo nexus daemon enable                # Auto-start on boot
+sudo nexus daemon disable               # Disable auto-start on boot
 
 # Gracefully stop the running background daemon (via supervisor or IPC)
-nexus daemon stop
+sudo nexus daemon stop
 
 # Stream live daemon logs in real time
 nexus daemon logs -f
 
 # Completely uninstall daemon service and remove supervisor unit files
-nexus daemon uninstall
+sudo nexus daemon uninstall
 ```
 
 #### 3. PM2-Style Synchronized Log Management (`nexus logs` / `nx logs`)
@@ -514,18 +513,18 @@ Nexus runs headlessly as a native OS background service (Linux `systemd`, macOS 
 
 ### Installing & Managing the Background Service
 ```bash
-# 1. Install and register the service (zero root required in user scope)
-nexus daemon install
+# 1. Install and register the system service (automatically cleans up legacy user units)
+sudo nexus daemon install
 
-# 2. Start the headless background daemon
-nexus daemon start
+# 2. Start the headless background daemon as root
+sudo nexus daemon start
 
-# 3. Check status (supervisor state + live IPC)
+# 3. Check status from any user shell (supervisor state + live IPC)
 nexus daemon status
 
 # 4. Stop or disable
-nexus daemon stop
-nexus daemon disable
+sudo nexus daemon stop
+sudo nexus daemon disable
 ```
 
 When running, the daemon:

@@ -56,8 +56,18 @@ public class DaemonServiceManager {
         if (activeProvider == null) {
             return new ServiceOperationResult(false, "INSTALL", "nexus", "", "No supported service supervisor detected on this OS.");
         }
+        if (systemScope) {
+            cleanupLegacyUserService();
+        }
         String binaryPath = resolveBinaryPath();
         return activeProvider.installService(systemScope, enable, binaryPath);
+    }
+
+    public boolean cleanupLegacyUserService() {
+        if (activeProvider == null) {
+            return false;
+        }
+        return activeProvider.cleanupLegacyUserService();
     }
 
     public ServiceOperationResult enableService(boolean systemScope) {

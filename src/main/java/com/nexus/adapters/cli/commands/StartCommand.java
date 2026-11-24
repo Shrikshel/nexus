@@ -50,8 +50,16 @@ public class StartCommand implements Callable<Integer> {
         PrintWriter out = spec.commandLine().getOut();
         PrintWriter err = spec.commandLine().getErr();
 
+        if (!"root".equalsIgnoreCase(System.getProperty("user.name"))) {
+            err.println("\u001B[31m✗ Error: The Nexus daemon must run as root.\u001B[0m");
+            err.println("  Running in user scope is restricted to prevent Telegram bot polling conflicts (HTTP 409).");
+            err.println("  👉 Please run with sudo:");
+            err.println("     sudo nexus start");
+            return 1;
+        }
+
         try {
-            out.println("\u001B[1;36mStarting Nexus Host Management Daemon...\u001B[0m");
+            out.println("\u001B[1;36mStarting Nexus Host Management Daemon as root...\u001B[0m");
 
             String configPath = NexusConfigResolver.getResolvedConfigPath();
             if (configPath != null) {

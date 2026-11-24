@@ -94,6 +94,10 @@ public class DaemonCommand implements Callable<Integer> {
         return root;
     }
 
+    public static boolean isRoot() {
+        return "root".equalsIgnoreCase(System.getProperty("user.name"));
+    }
+
     @Override
     public Integer call() {
         if (spec != null) {
@@ -128,7 +132,22 @@ public class DaemonCommand implements Callable<Integer> {
             PrintWriter out = spec.commandLine().getOut();
             PrintWriter err = spec.commandLine().getErr();
 
-            ServiceOperationResult res = parent.getServiceManager().installService(systemScope, !noEnable);
+            if (!isRoot()) {
+                err.println("\u001B[31m✗ Error: Installing the Nexus background daemon requires root privileges.\u001B[0m");
+                err.println("  Daemon installation in user scope is restricted to prevent Telegram bot polling conflicts (HTTP 409).");
+                err.println("  👉 Please run with sudo:");
+                err.println("     sudo nexus daemon install");
+                return 1;
+            }
+
+            boolean effectiveScope = true;
+            out.println("\u001B[1;36mInstalling Nexus daemon as root (system scope)...\u001B[0m");
+            boolean cleaned = parent.getServiceManager().cleanupLegacyUserService();
+            if (cleaned) {
+                out.println("  ✓ Cleaned up legacy user-space nexus.service to prevent conflicts.");
+            }
+
+            ServiceOperationResult res = parent.getServiceManager().installService(effectiveScope, !noEnable);
             if (!res.success()) {
                 err.println("\u001B[31mFailed to install daemon service: " + res.message() + "\u001B[0m");
                 return 1;
@@ -137,18 +156,11 @@ public class DaemonCommand implements Callable<Integer> {
             out.println("\u001B[32m✓ Nexus daemon service successfully installed" + (!noEnable ? " and enabled" : "") + "!\u001B[0m");
             out.println("  • Service Name:  " + res.serviceName());
             out.println("  • Unit Path:     " + res.unitPath());
-            out.println("  • Scope:         " + (systemScope ? "system (multi-user)" : "user (zero-root user scope)"));
+            out.println("  • Scope:         system (root service)");
             out.println("  • Status:        " + (!noEnable ? "Installed & Enabled (Stopped)" : "Installed (Disabled)"));
             out.println("");
             out.println("  👉 Start the background daemon anytime using:");
-            out.println("     nexus daemon start" + (systemScope ? " --system" : ""));
-
-            if (parent.getServiceManager().isLingerAdvised(systemScope)) {
-                String user = System.getProperty("user.name");
-                out.println("");
-                out.println("  💡 Tip: To allow the user service to persist after SSH logout on Linux, enable lingering:");
-                out.println("     sudo loginctl enable-linger " + user);
-            }
+            out.println("     sudo nexus daemon start");
             return 0;
         }
     }
@@ -175,7 +187,15 @@ public class DaemonCommand implements Callable<Integer> {
             PrintWriter out = spec.commandLine().getOut();
             PrintWriter err = spec.commandLine().getErr();
 
-            ServiceOperationResult res = parent.getServiceManager().enableService(systemScope);
+            if (!isRoot()) {
+                err.println("\u001B[31m✗ Error: Enabling the Nexus daemon service requires root privileges.\u001B[0m");
+                err.println("  👉 Please run with sudo:");
+                err.println("     sudo nexus daemon enable");
+                return 1;
+            }
+
+            boolean effectiveScope = true;
+            ServiceOperationResult res = parent.getServiceManager().enableService(effectiveScope);
             if (res.success()) {
                 out.println("\u001B[32m✓ " + res.message() + "\u001B[0m");
                 return 0;
@@ -208,7 +228,15 @@ public class DaemonCommand implements Callable<Integer> {
             PrintWriter out = spec.commandLine().getOut();
             PrintWriter err = spec.commandLine().getErr();
 
-            ServiceOperationResult res = parent.getServiceManager().disableService(systemScope);
+            if (!isRoot()) {
+                err.println("\u001B[31m✗ Error: Disabling the Nexus daemon service requires root privileges.\u001B[0m");
+                err.println("  👉 Please run with sudo:");
+                err.println("     sudo nexus daemon disable");
+                return 1;
+            }
+
+            boolean effectiveScope = true;
+            ServiceOperationResult res = parent.getServiceManager().disableService(effectiveScope);
             if (res.success()) {
                 out.println("\u001B[32m✓ " + res.message() + "\u001B[0m");
                 return 0;
@@ -250,30 +278,45 @@ public class DaemonCommand implements Callable<Integer> {
 
             // When NOT foreground, manage as an OS background service
             if (!foreground) {
-                if (!parent.getServiceManager().isServiceInstalled(systemScope)) {
+                if (!isRoot()) {
+                    err.println("\u001B[31m✗ Error: Starting the background daemon requires root privileges.\u001B[0m");
+                    err.println("  The Nexus daemon runs as a 24/7 system service to avoid Telegram bot polling conflicts (HTTP 409).");
+                    err.println("  👉 Please run with sudo:");
+                    err.println("     sudo nexus daemon start");
+                    return 1;
+                }
+
+                boolean effectiveScope = true;
+                out.println("\u001B[1;36mStarting Nexus daemon as root (system scope)...\u001B[0m");
+                boolean cleaned = parent.getServiceManager().cleanupLegacyUserService();
+                if (cleaned) {
+                    out.println("  ✓ Cleaned up legacy user-space nexus.service to prevent conflicts.");
+                }
+
+                if (!parent.getServiceManager().isServiceInstalled(effectiveScope)) {
                     err.println("\u001B[31mError: Nexus daemon service is not installed.\u001B[0m");
-                    err.println("  👉 Run 'nexus daemon install" + (systemScope ? " --system" : "") + "' first to install and enable the background service.");
-                    err.println("  👉 Or use 'nexus daemon start --foreground' to run directly in this terminal session.");
+                    err.println("  👉 Run 'sudo nexus daemon install' first to install and enable the background service.");
+                    err.println("  👉 Or use 'sudo nexus daemon start --foreground' to run directly in this terminal session.");
                     return 1;
                 }
 
                 // Ensure service is enabled
-                if (!parent.getServiceManager().isServiceEnabled(systemScope)) {
-                    parent.getServiceManager().enableService(systemScope);
+                if (!parent.getServiceManager().isServiceEnabled(effectiveScope)) {
+                    parent.getServiceManager().enableService(effectiveScope);
                 }
 
-                ServiceOperationResult res = parent.getServiceManager().startService(systemScope);
+                ServiceOperationResult res = parent.getServiceManager().startService(effectiveScope);
                 if (res.success()) {
                     out.println("\u001B[32m✓ Started Nexus daemon service in background (" + res.serviceName() + ")\u001B[0m");
                     out.println("  • Status:      RUNNING (headless background service)");
                     out.println("  • Supervisor:  " + parent.getServiceManager().getActiveProvider().getPlatformName());
-                    out.println("  • Scope:       " + (systemScope ? "system" : "user"));
+                    out.println("  • Scope:       system (root)");
                     out.println("  • Telegram:    ACTIVE (polling commands)");
                     out.println("  • Local IPC:   127.0.0.1:" + port);
                     out.println("");
-                    out.println("  ℹ Inspect live logs: " + parent.getServiceManager().getLogGuidance(systemScope));
-                    out.println("  ℹ Query status:      nexus daemon status" + (systemScope ? " --system" : ""));
-                    out.println("  ℹ Stop daemon:       nexus daemon stop" + (systemScope ? " --system" : ""));
+                    out.println("  ℹ Inspect live logs: " + parent.getServiceManager().getLogGuidance(effectiveScope));
+                    out.println("  ℹ Query status:      nexus daemon status");
+                    out.println("  ℹ Stop daemon:       sudo nexus daemon stop");
                     return 0;
                 } else {
                     err.println("\u001B[31mFailed to start daemon service: " + res.message() + "\u001B[0m");
@@ -282,12 +325,20 @@ public class DaemonCommand implements Callable<Integer> {
             }
 
             // Foreground mode (used by systemd ExecStart or direct debugging)
+            if (!isRoot()) {
+                err.println("\u001B[31m✗ Error: The Nexus daemon must run as root.\u001B[0m");
+                err.println("  Running in user scope is restricted to prevent Telegram bot polling conflicts (HTTP 409).");
+                err.println("  👉 Please run with sudo:");
+                err.println("     sudo nexus daemon start -f");
+                return 1;
+            }
+
             DaemonIpcServer srv = parent.getIpcServer();
             TelegramBotAdapter tgAdapter = parent.getTelegramBotAdapter();
             NexusProperties props = parent.getProperties();
 
             try {
-                out.println("\u001B[1;36mStarting Nexus Host Management Daemon (foreground)...\u001B[0m");
+                out.println("\u001B[1;36mStarting Nexus Host Management Daemon as root (foreground)...\u001B[0m");
 
                 String configPath = NexusConfigResolver.getResolvedConfigPath();
                 if (configPath != null) {
@@ -421,7 +472,8 @@ public class DaemonCommand implements Callable<Integer> {
             PrintWriter err = spec.commandLine().getErr();
             boolean json = isJsonRequested(spec);
 
-            ServiceStatusDetails details = parent.getServiceManager().getServiceStatus(systemScope);
+            boolean effectiveScope = systemScope || isRoot() || parent.getServiceManager().isServiceInstalled(true);
+            ServiceStatusDetails details = parent.getServiceManager().getServiceStatus(effectiveScope);
             String ipcStatusJson = null;
             try {
                 ipcStatusJson = parent.getIpcClient().sendCommand("STATUS", DaemonIpcServer.DEFAULT_PORT);
@@ -430,11 +482,11 @@ public class DaemonCommand implements Callable<Integer> {
             if (json) {
                 out.printf("{\"serviceInstalled\":%b,\"serviceEnabled\":%b,\"serviceRunning\":%b,\"platform\":\"%s\",\"scope\":\"%s\",\"ipcRunning\":%b}%n",
                         details.installed(), details.enabled(), details.running(), details.platform(),
-                        systemScope ? "system" : "user", ipcStatusJson != null);
+                        effectiveScope ? "system" : "user", ipcStatusJson != null);
             } else {
                 out.println("\u001B[1;36m=== Nexus Daemon Status ===\u001B[0m");
-                out.println("  Supervisor Service : " + details.serviceName() + " (" + details.platform() + ", " + (systemScope ? "system" : "user") + " scope)");
-                out.println("  Service Installed  : " + (details.installed() ? "\u001B[32mYES\u001B[0m (" + details.unitPath() + ")" : "\u001B[33mNO (run 'nexus daemon install')\u001B[0m"));
+                out.println("  Supervisor Service : " + details.serviceName() + " (" + details.platform() + ", " + (effectiveScope ? "system" : "user") + " scope)");
+                out.println("  Service Installed  : " + (details.installed() ? "\u001B[32mYES\u001B[0m (" + details.unitPath() + ")" : "\u001B[33mNO (run 'sudo nexus daemon install')\u001B[0m"));
                 out.println("  Service Enabled    : " + (details.enabled() ? "\u001B[32mYES (auto-starts on boot)\u001B[0m" : "\u001B[33mNO\u001B[0m"));
                 out.println("  Service State      : " + (details.running() ? "\u001B[32m" + details.stateDescription() + "\u001B[0m" : "\u001B[31m" + details.stateDescription() + "\u001B[0m"));
                 out.println("  Daemon IPC         : " + (ipcStatusJson != null ? "\u001B[32mRUNNING\u001B[0m (127.0.0.1:" + DaemonIpcServer.DEFAULT_PORT + ")" : "\u001B[31mOFFLINE\u001B[0m"));
@@ -524,7 +576,16 @@ public class DaemonCommand implements Callable<Integer> {
             PrintWriter out = spec.commandLine().getOut();
             PrintWriter err = spec.commandLine().getErr();
 
-            ServiceOperationResult res = parent.getServiceManager().uninstallService(systemScope);
+            if (!isRoot()) {
+                err.println("\u001B[31m✗ Error: Uninstalling the Nexus daemon service requires root privileges.\u001B[0m");
+                err.println("  👉 Please run with sudo:");
+                err.println("     sudo nexus daemon uninstall");
+                return 1;
+            }
+
+            boolean effectiveScope = true;
+            parent.getServiceManager().cleanupLegacyUserService();
+            ServiceOperationResult res = parent.getServiceManager().uninstallService(effectiveScope);
             if (res.success()) {
                 out.println("\u001B[32m✓ " + res.message() + " (" + res.serviceName() + ")\u001B[0m");
                 return 0;

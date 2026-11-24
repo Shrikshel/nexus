@@ -211,6 +211,43 @@ public class LinuxSystemdDaemonService implements DaemonServiceProvider {
         return systemScope ? "journalctl -u nexus -f" : "journalctl --user -u nexus -f";
     }
 
+    @Override
+    public boolean cleanupLegacyUserService() {
+        boolean cleaned = false;
+        List<Path> candidateUserUnitPaths = new ArrayList<>();
+
+        // 1. Current user home
+        candidateUserUnitPaths.add(Path.of(System.getProperty("user.home"), ".config", "systemd", "user", SERVICE_NAME));
+
+        // 2. If running under sudo, check the original non-root user's home
+        String sudoUser = System.getenv("SUDO_USER");
+        if (sudoUser != null && !sudoUser.isBlank() && !"root".equalsIgnoreCase(sudoUser)) {
+            candidateUserUnitPaths.add(Path.of("/home", sudoUser, ".config", "systemd", "user", SERVICE_NAME));
+        }
+
+        for (Path unitPath : candidateUserUnitPaths) {
+            if (Files.exists(unitPath)) {
+                try {
+                    runSystemctl(false, List.of("disable", "--now", SERVICE_NAME));
+                } catch (Exception ignored) {}
+                try {
+                    Files.deleteIfExists(unitPath);
+                    cleaned = true;
+                    log.info("Cleaned up legacy user-space systemd unit: {}", unitPath);
+                } catch (Exception e) {
+                    log.warn("Failed to delete legacy user-space unit {}: {}", unitPath, e.getMessage());
+                }
+            }
+        }
+
+        if (cleaned) {
+            try {
+                runSystemctl(false, List.of("daemon-reload"));
+            } catch (Exception ignored) {}
+        }
+        return cleaned;
+    }
+
     private int runSystemctl(boolean systemScope, List<String> args) {
         try {
             List<String> cmd = new ArrayList<>();

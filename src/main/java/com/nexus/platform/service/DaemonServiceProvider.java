@@ -30,4 +30,12 @@ public interface DaemonServiceProvider {
     ServiceStatusDetails getServiceStatus(boolean systemScope);
 
     String getLogGuidance(boolean systemScope);
+
+    /**
+     * Cleans up legacy or conflicting user-space systemd units if found.
+     * @return true if any user-space units were found and cleaned up
+     */
+    default boolean cleanupLegacyUserService() {
+        return false;
+    }
 }
