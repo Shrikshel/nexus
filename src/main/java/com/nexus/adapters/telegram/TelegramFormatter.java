@@ -17,10 +17,17 @@ import com.nexus.capabilities.storage.zfs.dto.*;
 import com.nexus.capabilities.system.dto.PowerOperationResult;
 import com.nexus.capabilities.system.dto.SystemInfoReport;
 import com.nexus.capabilities.system.dto.SystemUptimeReport;
+import com.nexus.capabilities.reminder.dto.*;
 import com.nexus.core.capability.CapabilityMetadata;
 import com.nexus.core.capability.CapabilityResult;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
@@ -490,6 +497,146 @@ public class TelegramFormatter {
         final String[] units = new String[]{"B", "KB", "MB", "GB", "TB"};
         int digitGroups = (int) (Math.log10(bytes) / Math.log10(1024));
         return String.format("%.2f %s", bytes / Math.pow(1024, digitGroups), units[digitGroups]);
+    }
+
+    public String formatReminderList(List<ReminderEvent> events) {
+        StringBuilder sb = new StringBuilder("📅 <b>Nexus Scheduled Reminders & Events</b>\n\n");
+        if (events == null || events.isEmpty()) {
+            sb.append("<i>No active reminders currently configured.</i>\n\n")
+              .append("👉 Add a reminder using CLI:\n")
+              .append("<code>sudo nexus reminder add --title \"Mom's Birthday\" --date YYYY-MM-DD --type BIRTHDAY</code>");
+            return sb.toString();
+        }
+
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+        for (ReminderEvent e : events) {
+            String icon = getReminderIcon(e.type());
+            String rel = formatRelativeDays(e.targetDate(), e.timezone());
+            sb.append("• <b>").append(escapeHtml(e.id())).append("</b> - <b>")
+              .append(escapeHtml(e.title())).append("</b> (").append(icon).append(" ").append(e.type()).append(")\n")
+              .append("  <i>Date:</i> ").append(e.targetDate()).append(" (").append(rel).append(")\n");
+
+            if (e.state() != null && e.state().nextTriggerAt() != null) {
+                String nextStage = e.state().nextStage() != null ? e.state().nextStage() : "-";
+                String nextTime = e.state().nextTriggerAt().atZone(e.timezone()).format(dtf);
+                String countdown = formatCountdown(e.state().nextTriggerAt());
+                sb.append("  <i>Next Alert:</i> <code>").append(nextStage).append("</code> at ").append(nextTime)
+                  .append(" (").append(countdown).append(")\n");
+            } else {
+                sb.append("  <i>Status:</i> ").append(e.state() != null ? e.state().status() : "COMPLETED").append("\n");
+            }
+            sb.append("\n");
+        }
+
+        sb.append("<b>Total Reminders:</b> ").append(events.size());
+        return sb.toString();
+    }
+
+    public String formatNextReminder(ReminderEvent e) {
+        if (e == null) {
+            return "⏰ <b>Next Upcoming Reminder</b>\n\n<i>No pending reminder alerts scheduled.</i>";
+        }
+
+        StringBuilder sb = new StringBuilder("⏰ <b>Next Upcoming Reminder</b>\n\n");
+        String icon = getReminderIcon(e.type());
+        String rel = formatRelativeDays(e.targetDate(), e.timezone());
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy HH:mm:ss");
+
+        sb.append("• <b>ID:</b> <code>").append(escapeHtml(e.id())).append("</code>\n")
+          .append("• <b>Title:</b> <b>").append(escapeHtml(e.title())).append("</b> (").append(icon).append(" ").append(e.type()).append(")\n")
+          .append("• <b>Event Date:</b> ").append(e.targetDate()).append(" (").append(rel).append(")\n");
+
+        if (e.state() != null && e.state().nextTriggerAt() != null) {
+            String nextStage = e.state().nextStage() != null ? e.state().nextStage() : "-";
+            String nextTime = e.state().nextTriggerAt().atZone(e.timezone()).format(dtf);
+            String countdown = formatCountdown(e.state().nextTriggerAt());
+            sb.append("• <b>Next Alert:</b> Stage <code>").append(nextStage).append("</code> at ").append(nextTime)
+              .append(" (").append(countdown).append(")\n");
+        }
+
+        sb.append("• <b>Recurrence:</b> ").append(e.recurrence()).append("\n")
+          .append("• <b>Status:</b> 🟢 ").append(e.state() != null ? e.state().status() : "ACTIVE");
+
+        return sb.toString();
+    }
+
+    public String formatReminderDetail(ReminderEvent e) {
+        if (e == null) {
+            return "⚠️ <i>Reminder not found.</i>";
+        }
+        StringBuilder sb = new StringBuilder();
+        String icon = getReminderIcon(e.type());
+        sb.append("📅 <b>Reminder: ").append(escapeHtml(e.title())).append("</b> (<code>").append(escapeHtml(e.id())).append("</code>)\n\n");
+        sb.append("• <b>Type:</b> ").append(icon).append(" ").append(e.type()).append(" (").append(escapeHtml(e.category())).append(")\n");
+        sb.append("• <b>Target:</b> ").append(e.targetDate()).append(" at ").append(e.targetTime()).append(" (").append(e.timezone()).append(")\n");
+        sb.append("• <b>Recurrence:</b> ").append(e.recurrence()).append("\n");
+        sb.append("• <b>Status:</b> ").append(e.state() != null ? e.state().status() : "UNKNOWN")
+          .append(" (Cycle: ").append(e.state() != null ? e.state().activeCycle() : "-").append(")\n");
+
+        if (e.metadata() != null && !e.metadata().isEmpty()) {
+            if (e.metadata().containsKey("birthYear")) {
+                sb.append("• <b>Birth Year:</b> ").append(e.metadata().get("birthYear")).append("\n");
+            }
+            if (e.metadata().containsKey("notes")) {
+                sb.append("• <b>Notes:</b> <i>").append(escapeHtml(String.valueOf(e.metadata().get("notes")))).append("</i>\n");
+            }
+        }
+
+        sb.append("\n<b>Notification Milestones:</b>\n");
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+        for (ReminderStage s : e.stages()) {
+            String timeStr = s.triggerAt() != null ? s.triggerAt().atZone(e.timezone()).format(dtf) : "-";
+            String badge = s.status() == ReminderStageStatus.DELIVERED ? "✅ [DELIVERED]" : "⏳ [PENDING]";
+            sb.append("• <code>").append(s.stage()).append("</code>: ").append(timeStr).append(" ").append(badge);
+            if (s.customMessage() != null && !s.customMessage().isBlank()) {
+                sb.append(" - <i>\"").append(escapeHtml(s.customMessage())).append("\"</i>");
+            }
+            sb.append("\n");
+        }
+
+        return sb.toString();
+    }
+
+    private String getReminderIcon(ReminderType type) {
+        if (type == null) return "📌";
+        return switch (type) {
+            case BIRTHDAY -> "🎂";
+            case ANNIVERSARY -> "💍";
+            case BILL -> "💳";
+            case EVENT -> "📅";
+            case MEETING -> "👥";
+            case CUSTOM -> "🔔";
+        };
+    }
+
+    private String formatRelativeDays(LocalDate targetDate, ZoneId zone) {
+        if (targetDate == null) return "-";
+        LocalDate today = LocalDate.now(zone != null ? zone : ZoneId.systemDefault());
+        long days = ChronoUnit.DAYS.between(today, targetDate);
+        if (days == 0) return "Today";
+        if (days == 1) return "Tomorrow";
+        if (days == -1) return "Yesterday";
+        if (days > 1) return "in " + days + " days";
+        return Math.abs(days) + " days ago";
+    }
+
+    private String formatCountdown(Instant triggerAt) {
+        if (triggerAt == null) return "-";
+        Duration d = Duration.between(Instant.now(), triggerAt);
+        if (d.isNegative()) {
+            return "due now";
+        }
+        long hours = d.toHours();
+        long minutes = d.toMinutesPart();
+        if (hours >= 24) {
+            long days = hours / 24;
+            hours = hours % 24;
+            return "in " + days + "d " + hours + "h";
+        } else if (hours > 0) {
+            return "in " + hours + "h " + minutes + "m";
+        } else {
+            return "in " + minutes + "m";
+        }
     }
 
     private String escapeHtml(String text) {

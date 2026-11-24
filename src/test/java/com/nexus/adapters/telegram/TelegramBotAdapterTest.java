@@ -2,6 +2,8 @@ package com.nexus.adapters.telegram;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.nexus.capabilities.reminder.dto.*;
+import com.nexus.capabilities.reminder.storage.ReminderStorageManager;
 import com.nexus.config.NexusProperties;
 import com.nexus.core.capability.*;
 import com.nexus.capabilities.system.dto.SystemInfoReport;
@@ -11,6 +13,12 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -23,6 +31,7 @@ class TelegramBotAdapterTest {
     private TelegramSecurityFilter securityFilter;
     private TelegramFormatter formatter;
     private ExecutionEngine executionEngine;
+    private ReminderStorageManager reminderStorageManager;
     private TelegramBotAdapter adapter;
     private ObjectMapper objectMapper;
 
@@ -38,9 +47,10 @@ class TelegramBotAdapterTest {
         securityFilter = new TelegramSecurityFilter();
         formatter = new TelegramFormatter();
         executionEngine = mock(ExecutionEngine.class);
+        reminderStorageManager = mock(ReminderStorageManager.class);
         objectMapper = new ObjectMapper();
 
-        adapter = new TelegramBotAdapter(properties, client, securityFilter, formatter, executionEngine);
+        adapter = new TelegramBotAdapter(properties, client, securityFilter, formatter, executionEngine, reminderStorageManager);
     }
 
     private ObjectNode createUpdateJson(long updateId, long chatId, long senderId, String text) {
@@ -224,5 +234,73 @@ class TelegramBotAdapterTest {
         adapter.processUpdate(update, properties.getTelegram());
 
         verify(executionEngine, times(1)).execute(eq("zfs.pool.list"), any(), isNull());
+    }
+
+    @Test
+    @DisplayName("Routes /reminders to reminder list formatter")
+    void testRemindersListRouting() {
+        ReminderEvent event = new ReminderEvent(
+                "uuid-1", "EVT-001", "Mom's Birthday", ReminderType.BIRTHDAY, "FAMILY",
+                LocalDate.of(2026, 11, 25), LocalTime.of(9, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.YEARLY, Collections.emptyMap(),
+                List.of(new ReminderStage("0m", "PT0S", Instant.now(), null, null, ReminderStageStatus.PENDING)),
+                ReminderEventState.initial("2026", "0m", Instant.now()), Collections.emptyList()
+        );
+        when(reminderStorageManager.loadAll()).thenReturn(List.of(event));
+        when(client.sendMessage(anyString(), anyLong(), anyString())).thenReturn(true);
+
+        ObjectNode update = createUpdateJson(13, 999L, 100L, "/reminders");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        ArgumentCaptor<String> replyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendMessage(eq("mock-token-123"), eq(999L), replyCaptor.capture());
+        assertThat(replyCaptor.getValue()).contains("Nexus Scheduled Reminders & Events");
+        assertThat(replyCaptor.getValue()).contains("EVT-001");
+        assertThat(replyCaptor.getValue()).contains("Mom's Birthday");
+    }
+
+    @Test
+    @DisplayName("Routes /reminders next to next upcoming reminder formatter")
+    void testRemindersNextRouting() {
+        ReminderEvent event = new ReminderEvent(
+                "uuid-1", "EVT-001", "Upcoming Meeting", ReminderType.MEETING, "WORK",
+                LocalDate.of(2026, 12, 1), LocalTime.of(10, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.NONE, Collections.emptyMap(),
+                List.of(new ReminderStage("0m", "PT0S", Instant.now().plusSeconds(3600), null, null, ReminderStageStatus.PENDING)),
+                new ReminderEventState("2026", "ACTIVE", null, "0m", Instant.now().plusSeconds(3600)), Collections.emptyList()
+        );
+        when(reminderStorageManager.loadAll()).thenReturn(List.of(event));
+        when(client.sendMessage(anyString(), anyLong(), anyString())).thenReturn(true);
+
+        ObjectNode update = createUpdateJson(14, 999L, 100L, "/reminders next");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        ArgumentCaptor<String> replyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendMessage(eq("mock-token-123"), eq(999L), replyCaptor.capture());
+        assertThat(replyCaptor.getValue()).contains("Next Upcoming Reminder");
+        assertThat(replyCaptor.getValue()).contains("EVT-001");
+        assertThat(replyCaptor.getValue()).contains("Upcoming Meeting");
+    }
+
+    @Test
+    @DisplayName("Routes /reminders EVT-001 to reminder detail formatter")
+    void testRemindersDetailRouting() {
+        ReminderEvent event = new ReminderEvent(
+                "uuid-1", "EVT-001", "Specific Event", ReminderType.EVENT, "GENERAL",
+                LocalDate.of(2026, 12, 1), LocalTime.of(10, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.NONE, Collections.emptyMap(),
+                List.of(new ReminderStage("0m", "PT0S", Instant.now(), null, null, ReminderStageStatus.PENDING)),
+                ReminderEventState.initial("2026", "0m", Instant.now()), Collections.emptyList()
+        );
+        when(reminderStorageManager.findByIdOrUuid("EVT-001")).thenReturn(Optional.of(event));
+        when(client.sendMessage(anyString(), anyLong(), anyString())).thenReturn(true);
+
+        ObjectNode update = createUpdateJson(15, 999L, 100L, "/reminders EVT-001");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        ArgumentCaptor<String> replyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendMessage(eq("mock-token-123"), eq(999L), replyCaptor.capture());
+        assertThat(replyCaptor.getValue()).contains("Reminder: Specific Event");
+        assertThat(replyCaptor.getValue()).contains("EVT-001");
     }
 }

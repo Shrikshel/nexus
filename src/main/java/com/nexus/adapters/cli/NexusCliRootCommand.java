@@ -25,6 +25,7 @@ import java.util.concurrent.Callable;
         SystemCommand.class,
         DaemonCommand.class,
         LogsCommand.class,
+        com.nexus.adapters.cli.commands.ReminderCommand.class,
         com.nexus.adapters.cli.commands.TimerCommand.class,
         com.nexus.adapters.cli.commands.TelegramCommand.class,
         TailscaleCommand.class,

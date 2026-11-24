@@ -463,7 +463,50 @@ nexus timer delete NX001 -y
 nexus timer delete NX001 --purge-script -y  # Also deletes associated executable automation script
 ```
 
-#### 8. Native Telegram Notification & Media Dispatching API
+#### 8. Event & Birthday Reminder Engine (`nexus reminder` / `nx reminder`)
+Nexus includes a native, zero-overhead event and notification milestone scheduler designed for birthdays, recurring bills, anniversaries, and operational events. It couples single-file atomic JSON persistence (`~/.nexus/data/reminders.json` or `/root/.nexus/data/reminders.json`) with hardware-level systemd timer wakeups (`Persistent=true`, multi-`OnCalendar` entries per pending stage, 0% CPU idle burn) and automated recurrence rollover across any interval (`DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`, `NONE`):
+
+- **Multi-Stage Milestones**: Configurable alert milestones (e.g. `7d,3d,1d,1h,0m`) with stage progression and smart message synthesis.
+- **Birthday Age Celebrations**: Automatic milestone age calculation for birthdays based on `--birth-year` (e.g. *"Alice's Birthday is today! Celebrating 36 years today! 🎂"*).
+- **Recurrence Rollover**: Automatic rollover across annual, monthly, weekly, or daily cycles with archive history upon cycle completion.
+- **Dual-ID Architecture**: Friendly natural identifiers (`EVT-001`, `EVT-002`, `EVT-MOM-BDAY`) for clean CLI ergonomics, paired with system-internal immutable UUIDv4 (`uuid`) for collision-free import/export merging.
+- **Privilege Separation**: Mutating commands (`add`, `edit`, `delete`, `import`, `sync`) require `sudo` so background systemd timers run 24/7 as root; read-only commands (`list`, `next`, `show`, `export`) are accessible to all users.
+
+```bash
+# List all active scheduled reminders and next notification milestones
+nexus reminder list
+nexus reminder list --type BIRTHDAY      # Filter by type (BIRTHDAY, BILL, ANNIVERSARY, MEETING, EVENT)
+nexus reminder list --json
+
+# View immediate next upcoming reminder with countdown
+nexus reminder next
+
+# Inspect detailed reminder configuration, stage progression, and history
+nexus reminder show EVT-001
+
+# Create a new birthday reminder with automatic milestone age calculation (requires sudo)
+sudo nexus reminder add --title "Mom's Birthday" --date 2026-11-25 --type BIRTHDAY --birth-year 1966
+
+# Create a recurring server bill with custom alert stages (requires sudo)
+sudo nexus reminder add --title "AWS Hosting Bill" --date 2026-12-01 --stages 7d,3d,1d,0m --type BILL --recurrence MONTHLY
+
+# Edit an existing reminder (e.g. update target time, add custom stage message, or update stages)
+sudo nexus reminder edit EVT-001 --time 10:00:00 --stages 3d,1d,0m --stage-msg "0m=Pay immediate hosting invoice"
+
+# Send a test notification to Telegram without altering stage progression
+nexus reminder test EVT-001
+
+# Delete a reminder and automatically disarm & remove systemd timer units (requires sudo)
+sudo nexus reminder delete EVT-001
+
+# Export reminders to a backup JSON file or stdout
+nexus reminder export -o reminders_backup.json
+
+# Import and reconcile reminders from backup (merge or replace mode, requires sudo)
+sudo nexus reminder import reminders_backup.json --mode merge
+```
+
+#### 9. Native Telegram Notification & Media Dispatching API
 Send messages, alerts, log files, photos, and stickers directly from the CLI or automation scripts/timers with multi-recipient broadcasting:
 
 ```bash
@@ -499,7 +542,7 @@ nexus telegram send "Deployment started" -r 123456789 -r @devops_broadcast
 nexus --json telegram send "Automated ping"
 ```
 
-#### 9. Capabilities Introspection & Updates
+#### 10. Capabilities Introspection & Updates
 ```bash
 # Introspect all registered capabilities and their RBAC permissions
 ./nexus capabilities list
@@ -580,6 +623,8 @@ nexus:
 | `/zfs_get` | `<dataset>` | `READ_STORAGE` | Inspect detailed properties for a specific ZFS dataset |
 | `/services` | — | `READ_SERVICES` | Installed system services status |
 | `/timers` | `[id]` | `READ_SERVICES` | List recurring timers or inspect live timer status & journal logs |
+| `/reminders` | `[id]` | `READ_SERVICES` | List active scheduled reminders, inspect reminder details & milestones |
+| `/reminders next` | — | `READ_SERVICES` | Immediate next upcoming reminder and countdown |
 | `/tailscale` | — | `READ_NETWORK` | Tailscale VPN state, MagicDNS name, tailnet IPs, and peers |
 | `/tailscale_up` | `[args]` | `WRITE_NETWORK` | Connect to Tailscale network (`/tailscale_up --accept-routes`) |
 | `/tailscale_down` | — | `WRITE_NETWORK` | Disconnect from Tailscale network |

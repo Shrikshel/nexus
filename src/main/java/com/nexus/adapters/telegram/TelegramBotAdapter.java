@@ -7,6 +7,8 @@ import com.nexus.capabilities.scheduler.timer.dto.TimerScope;
 import com.nexus.capabilities.scheduler.timer.dto.TimerStatusRequest;
 import com.nexus.capabilities.storage.zfs.dto.ZfsDatasetDetailRequest;
 import com.nexus.capabilities.system.dto.PowerOperationRequest;
+import com.nexus.capabilities.reminder.dto.ReminderEvent;
+import com.nexus.capabilities.reminder.storage.ReminderStorageManager;
 import com.nexus.config.NexusConfigResolver;
 import com.nexus.config.NexusProperties;
 import com.nexus.core.capability.CapabilityResult;
@@ -17,11 +19,15 @@ import com.nexus.core.security.Role;
 import com.nexus.core.security.Subject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -40,10 +46,27 @@ public class TelegramBotAdapter implements SmartLifecycle {
     private final TelegramSecurityFilter securityFilter;
     private final TelegramFormatter formatter;
     private final ExecutionEngine executionEngine;
+    private final ReminderStorageManager reminderStorageManager;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ExecutorService pollerExecutor;
     private long lastUpdateId = 0;
+
+    @Autowired
+    public TelegramBotAdapter(
+            NexusProperties properties,
+            TelegramClient client,
+            TelegramSecurityFilter securityFilter,
+            TelegramFormatter formatter,
+            ExecutionEngine executionEngine,
+            @Autowired(required = false) ReminderStorageManager reminderStorageManager) {
+        this.properties = properties;
+        this.client = client;
+        this.securityFilter = securityFilter;
+        this.formatter = formatter;
+        this.executionEngine = executionEngine;
+        this.reminderStorageManager = reminderStorageManager;
+    }
 
     public TelegramBotAdapter(
             NexusProperties properties,
@@ -51,11 +74,7 @@ public class TelegramBotAdapter implements SmartLifecycle {
             TelegramSecurityFilter securityFilter,
             TelegramFormatter formatter,
             ExecutionEngine executionEngine) {
-        this.properties = properties;
-        this.client = client;
-        this.securityFilter = securityFilter;
-        this.formatter = formatter;
-        this.executionEngine = executionEngine;
+        this(properties, client, securityFilter, formatter, executionEngine, null);
     }
 
     @Override
@@ -322,6 +341,11 @@ public class TelegramBotAdapter implements SmartLifecycle {
                 handleTimerCommand(text, context, chatId, botToken);
                 break;
 
+            case "/reminders":
+            case "/reminder":
+                handleReminderCommand(text, chatId, botToken);
+                break;
+
             default:
                 if (command.startsWith("/")) {
                     // Try mapping command directly to capability ID (e.g. /sys_info -> sys.info)
@@ -440,6 +464,51 @@ public class TelegramBotAdapter implements SmartLifecycle {
         }
     }
 
+    private void handleReminderCommand(String text, long chatId, String botToken) {
+        if (reminderStorageManager == null) {
+            client.sendMessage(botToken, chatId, "⚠️ <i>Reminder subsystem is not initialized or unavailable.</i>");
+            return;
+        }
+
+        String[] parts = text.trim().split("\\s+");
+        if (parts.length > 1) {
+            String arg = parts[1].trim();
+            if ("next".equalsIgnoreCase(arg)) {
+                List<ReminderEvent> all = reminderStorageManager.loadAll();
+                ReminderEvent nextEvent = null;
+                Instant earliest = null;
+                for (ReminderEvent e : all) {
+                    if ("ACTIVE".equalsIgnoreCase(e.state().status()) && e.state().nextTriggerAt() != null) {
+                        if (earliest == null || e.state().nextTriggerAt().isBefore(earliest)) {
+                            earliest = e.state().nextTriggerAt();
+                            nextEvent = e;
+                        }
+                    }
+                }
+                String reply = formatter.formatNextReminder(nextEvent);
+                client.sendMessage(botToken, chatId, reply);
+                return;
+            }
+
+            Optional<ReminderEvent> eventOpt = reminderStorageManager.findByIdOrUuid(arg);
+            if (eventOpt.isPresent()) {
+                String reply = formatter.formatReminderDetail(eventOpt.get());
+                client.sendMessage(botToken, chatId, reply);
+            } else {
+                client.sendMessage(botToken, chatId, "⚠️ <i>Reminder not found:</i> <code>" + arg + "</code>\n\nUse /reminders to view active reminders.");
+            }
+            return;
+        }
+
+        List<ReminderEvent> all = reminderStorageManager.loadAll();
+        List<ReminderEvent> active = all.stream()
+                .filter(e -> "ACTIVE".equalsIgnoreCase(e.state().status()))
+                .toList();
+
+        String reply = formatter.formatReminderList(active.isEmpty() && !all.isEmpty() ? all : active);
+        client.sendMessage(botToken, chatId, reply);
+    }
+
     private void sendHelpMessage(long chatId, String botToken) {
         String helpHtml = "🛡️ <b>Nexus Host Management Agent</b>\n\n" +
                 "<b>System & Hardware:</b>\n" +
@@ -457,10 +526,11 @@ public class TelegramBotAdapter implements SmartLifecycle {
                 "• /zfs_get &lt;dataset&gt; - Inspect dataset properties\n\n" +
                 "<b>Processes:</b>\n" +
                 "• /proc - Top running system processes\n\n" +
-                "<b>Network, VPN & Services:</b>\n" +
-                "• /net - Network interfaces, IPs & MACs\n" +
-                "• /services - Installed system services status\n" +
+                "<b>Automation & Reminders:</b>\n" +
                 "• /timers [id] - List scheduled timers or inspect live timer status\n" +
+                "• /reminders - List scheduled reminders and upcoming stages\n" +
+                "• /reminders next - Immediate next reminder & countdown\n" +
+                "• /reminders [id] - Inspect detailed reminder configuration & stages\n" +
                 "• /tailscale - Tailscale VPN mesh status & peers\n" +
                 "• /tailscale_up - Connect and bring Tailscale VPN up\n" +
                 "• /tailscale_down - Disconnect Tailscale VPN\n\n" +

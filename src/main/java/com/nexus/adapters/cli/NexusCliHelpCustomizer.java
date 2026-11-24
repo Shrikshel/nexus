@@ -33,6 +33,7 @@ public final class NexusCliHelpCustomizer {
             )),
             new CommandGroup("AUTOMATION & SERVICES", List.of(
                     new CommandEntry("timer", "Manage recurring timers and scripts (systemd, launchd, task scheduler)"),
+                    new CommandEntry("reminder", "Multi-stage birthday, bill, and event notification engine"),
                     new CommandEntry("telegram", "Dispatch notifications, log files, and media via Telegram"),
                     new CommandEntry("tailscale", "Inspect and control Tailscale VPN mesh network and peers")
             )),
@@ -74,6 +75,17 @@ public final class NexusCliHelpCustomizer {
                     "nx timer status NX001              # Inspect next run time and journal logs",
                     "nx timer run NX001                 # Trigger immediate one-off execution",
                     "nx timer delete NX001 --purge-script"
+            )),
+            Map.entry("reminder", List.of(
+                    "nx reminder list                   # View scheduled reminders & upcoming milestones",
+                    "nx reminder next                   # Inspect immediate next reminder & countdown",
+                    "nx reminder add --title \"Mom's Birthday\" --date 2026-11-25 --type BIRTHDAY",
+                    "nx reminder add --title \"AWS Hosting Bill\" --date 2026-12-01 --stages 7d,3d,1d,0m --type BILL",
+                    "nx reminder show EVT-001           # Inspect stages, history, and systemd timer",
+                    "nx reminder edit EVT-001 --time 10:00:00 --stages 3d,1d,0m",
+                    "nx reminder delete EVT-001         # Remove reminder and delete systemd unit",
+                    "nx reminder export reminders.json  # Backup all reminders to JSON",
+                    "nx reminder import reminders.json  # Restore/merge reminders from backup"
             )),
             Map.entry("telegram", List.of(
                     "nx telegram send \"Backup finished!\"   # Broadcast text message",
