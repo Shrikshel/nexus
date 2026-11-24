@@ -138,6 +138,21 @@ public class MacLaunchdDaemonService implements DaemonServiceProvider {
     }
 
     @Override
+    public ServiceOperationResult restartService(boolean systemScope) {
+        Path plistPath = resolvePlistPath(systemScope);
+        if (!Files.exists(plistPath)) {
+            return new ServiceOperationResult(false, "RESTART", LABEL, plistPath.toString(), "Launchd plist does not exist. Run 'nexus daemon install' first.");
+        }
+        stopService(systemScope);
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException ignored) {}
+        ServiceOperationResult startRes = startService(systemScope);
+        return new ServiceOperationResult(startRes.success(), "RESTART", LABEL, plistPath.toString(),
+                startRes.success() ? "Restarted Nexus launchd daemon service" : "Failed to restart launchd service: " + startRes.message());
+    }
+
+    @Override
     public ServiceOperationResult uninstallService(boolean systemScope) {
         Path plistPath = resolvePlistPath(systemScope);
         try {

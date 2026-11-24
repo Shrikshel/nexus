@@ -3,6 +3,12 @@
 [![Build GraalVM Native](https://github.com/Shrikshel/nexus/actions/workflows/build-native.yml/badge.svg)](https://github.com/Shrikshel/nexus/actions/workflows/build-native.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+> [!CAUTION]
+> ### ⚠️ EXPERIMENTAL & VIBE CODED — DO NOT USE IN PRODUCTION ⚠️
+> **This repository is vibe coded and under active, rapid development.**
+> It is built for homelabs, developer experimentation, and testing. Core capabilities, CLI interfaces, internal schemas, and configuration models are subject to continuous breaking changes without prior notice.
+> **USE AT YOUR OWN RISK — STRICTLY DO NOT RUN IN MISSION-CRITICAL OR PRODUCTION ENVIRONMENTS.**
+
 Nexus is an enterprise-grade, lightweight, cross-platform host management agent built with Java, Spring Boot, Picocli, and GraalVM Native Image ahead-of-time (AOT) compilation.
 
 It targets **Linux, Windows, and macOS**, running with minimal runtime memory footprint while providing a first-class CLI, authenticated local IPC, and remote bi-directional Telegram integrations.
@@ -296,6 +302,10 @@ nexus daemon status --json
 # Enable or disable auto-start on host boot
 sudo nexus daemon enable                # Auto-start on boot
 sudo nexus daemon disable               # Disable auto-start on boot
+
+# Restart the running background daemon (alias: 'reload')
+sudo nexus daemon restart               # Seamlessly restarts daemon supervisor unit
+sudo nexus daemon reload                # Alias for restart
 
 # Gracefully stop the running background daemon (via supervisor or IPC)
 sudo nexus daemon stop

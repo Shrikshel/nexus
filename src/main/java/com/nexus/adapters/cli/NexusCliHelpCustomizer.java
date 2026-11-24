@@ -60,8 +60,9 @@ public final class NexusCliHelpCustomizer {
             )),
             Map.entry("daemon", List.of(
                     "nx daemon status                   # Inspect live daemon process & PID",
-                    "nx daemon start                    # Start and enable background agent service",
-                    "nx daemon stop                     # Gracefully stop running background service",
+                    "sudo nx daemon start               # Start background agent service",
+                    "sudo nx daemon restart             # Restart running background service (or reload)",
+                    "sudo nx daemon stop                # Gracefully stop running background service",
                     "nx daemon logs -f                  # Live follow background daemon output"
             )),
             Map.entry("logs", List.of(

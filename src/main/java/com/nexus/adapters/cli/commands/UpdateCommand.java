@@ -34,6 +34,7 @@ public class UpdateCommand implements Callable<Integer> {
     private CommandSpec spec;
 
     private final NexusUpdateService updateService;
+    private final com.nexus.platform.service.DaemonServiceManager serviceManager;
     private final ObjectMapper objectMapper;
 
     @Option(names = {"--check"}, description = "Check if an update is available without downloading or installing")
@@ -51,9 +52,16 @@ public class UpdateCommand implements Callable<Integer> {
     @Option(names = {"--dry-run"}, description = "Display what would be downloaded and updated without modifying the system")
     private boolean dryRun;
 
-    public UpdateCommand(NexusUpdateService updateService) {
+    @org.springframework.beans.factory.annotation.Autowired
+    public UpdateCommand(NexusUpdateService updateService,
+                         @org.springframework.beans.factory.annotation.Autowired(required = false) com.nexus.platform.service.DaemonServiceManager serviceManager) {
         this.updateService = updateService;
+        this.serviceManager = serviceManager;
         this.objectMapper = new ObjectMapper();
+    }
+
+    public UpdateCommand(NexusUpdateService updateService) {
+        this(updateService, null);
     }
 
     @Override
@@ -163,6 +171,16 @@ public class UpdateCommand implements Callable<Integer> {
 
             if (printSteps) out.println("Installing new binary to " + targetBinary + "...");
             updateService.applyUpdate(tempBinary, targetBinary);
+
+            if (serviceManager != null && serviceManager.isServiceRunning(true)) {
+                if (printSteps) out.println("Restarting Nexus daemon background service to load updated binary...");
+                com.nexus.platform.service.ServiceOperationResult restartRes = serviceManager.restartService(true);
+                if (restartRes.success()) {
+                    if (printSteps) out.println("  ✓ Nexus daemon restarted successfully (" + restartRes.serviceName() + ").");
+                } else {
+                    if (printSteps) out.println("  ⚠️ Could not automatically restart daemon: " + restartRes.message());
+                }
+            }
         } finally {
             Files.deleteIfExists(tempBinary);
         }

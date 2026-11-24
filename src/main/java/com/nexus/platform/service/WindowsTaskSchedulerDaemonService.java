@@ -101,6 +101,20 @@ public class WindowsTaskSchedulerDaemonService implements DaemonServiceProvider 
     }
 
     @Override
+    public ServiceOperationResult restartService(boolean systemScope) {
+        if (!isServiceInstalled(systemScope)) {
+            return new ServiceOperationResult(false, "RESTART", TASK_NAME, "TaskScheduler:\\" + TASK_NAME, "Task is not installed. Run 'nexus daemon install' first.");
+        }
+        stopService(systemScope);
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException ignored) {}
+        ServiceOperationResult startRes = startService(systemScope);
+        return new ServiceOperationResult(startRes.success(), "RESTART", TASK_NAME, "TaskScheduler:\\" + TASK_NAME,
+                startRes.success() ? "Restarted Nexus daemon task" : "Failed to restart daemon task: " + startRes.message());
+    }
+
+    @Override
     public ServiceOperationResult uninstallService(boolean systemScope) {
         int code = runSchtasks(List.of("/delete", "/tn", TASK_NAME, "/f"));
         return new ServiceOperationResult(code == 0, "UNINSTALL", TASK_NAME, "TaskScheduler:\\" + TASK_NAME,

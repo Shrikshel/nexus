@@ -266,8 +266,14 @@ Possible reasons:
 
     chmod +x "$DOWNLOAD_PATH"
 
-    # Stop running daemon before in-place upgrade
+    # Check if daemon was running before in-place upgrade
+    WAS_RUNNING=0
     if command_exists nexus; then
+        if nexus daemon status 2>/dev/null | grep -q "Running.*true"; then
+            WAS_RUNNING=1
+        elif systemctl is-active --quiet nexus.service 2>/dev/null; then
+            WAS_RUNNING=1
+        fi
         info "Stopping running Nexus daemon if active..."
         nexus daemon stop >/dev/null 2>&1 || nexus stop >/dev/null 2>&1 || true
     fi
@@ -334,6 +340,13 @@ Possible reasons:
         fi
     done
     success "Configured command aliases: nx, n, nxs, nexux -> $INSTALL_TARGET"
+
+    # Restart daemon service if it was running before upgrade
+    if [ "$WAS_RUNNING" = "1" ]; then
+        info "Restarting Nexus daemon background service..."
+        nexus daemon restart >/dev/null 2>&1 || sudo nexus daemon restart >/dev/null 2>&1 || sudo systemctl restart nexus.service >/dev/null 2>&1 || true
+        success "Restarted Nexus background daemon service"
+    fi
 
     # PATH warning if installing to non-standard user directory
     case ":$PATH:" in

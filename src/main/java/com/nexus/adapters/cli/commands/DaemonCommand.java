@@ -29,13 +29,14 @@ import java.util.concurrent.Callable;
 @Command(
     name = "daemon",
     aliases = {"d"},
-    description = "Manage the Nexus background daemon service (install, enable, disable, start, stop, status, logs, uninstall)",
+    description = "Manage the Nexus background daemon service (install, enable, disable, start, stop, restart, status, logs, uninstall)",
     subcommands = {
         DaemonCommand.InstallSubcommand.class,
         DaemonCommand.EnableSubcommand.class,
         DaemonCommand.DisableSubcommand.class,
         DaemonCommand.StartSubcommand.class,
         DaemonCommand.StopSubcommand.class,
+        DaemonCommand.RestartSubcommand.class,
         DaemonCommand.StatusSubcommand.class,
         DaemonCommand.LogsSubcommand.class,
         DaemonCommand.UninstallSubcommand.class
@@ -434,8 +435,11 @@ public class DaemonCommand implements Callable<Integer> {
             boolean effectiveScope = true;
             boolean stopped = false;
 
-            // 1. Try stopping through supervisor service if installed
-            if (parent.getServiceManager().isServiceInstalled(effectiveScope)) {
+            // If invoked from systemd ExecStop, do NOT call systemctl stop (to prevent job cancellation recursion)
+            boolean insideSystemd = System.getenv("INVOCATION_ID") != null || System.getenv("JOURNAL_STREAM") != null;
+
+            // 1. Try stopping through supervisor service if installed (and not called from inside systemd)
+            if (!insideSystemd && parent.getServiceManager().isServiceInstalled(effectiveScope)) {
                 ServiceOperationResult res = parent.getServiceManager().stopService(effectiveScope);
                 if (res.success()) {
                     out.println("\u001B[32m✓ " + res.message() + " (" + res.serviceName() + ")\u001B[0m");
@@ -454,6 +458,56 @@ public class DaemonCommand implements Callable<Integer> {
                 out.println("  ℹ Nexus daemon is not currently running or already stopped.");
             }
             return 0;
+        }
+    }
+
+    // 6. RESTART
+    @Component
+    @Command(
+        name = "restart",
+        aliases = {"reload"},
+        description = "Restarts the running Nexus daemon background service",
+        mixinStandardHelpOptions = true
+    )
+    public static class RestartSubcommand implements Callable<Integer> {
+
+        @Spec
+        private CommandSpec spec;
+
+        @ParentCommand
+        private DaemonCommand parent;
+
+        @Option(names = {"--system"}, description = "Target system-wide service (requires root/sudo)")
+        private boolean systemScope;
+
+        @Override
+        public Integer call() {
+            PrintWriter out = spec.commandLine().getOut();
+            PrintWriter err = spec.commandLine().getErr();
+
+            if (!isRoot()) {
+                err.println("\u001B[31m✗ Error: Restarting the Nexus background daemon service requires root privileges.\u001B[0m");
+                err.println("  👉 Please run with sudo:");
+                err.println("     sudo nexus daemon restart");
+                return 1;
+            }
+
+            boolean effectiveScope = true;
+
+            if (!parent.getServiceManager().isServiceInstalled(effectiveScope)) {
+                err.println("\u001B[31m✗ Error: Nexus daemon service is not installed.\u001B[0m");
+                err.println("  👉 Run 'sudo nexus daemon install' first.");
+                return 1;
+            }
+
+            ServiceOperationResult res = parent.getServiceManager().restartService(effectiveScope);
+            if (res.success()) {
+                out.println("\u001B[32m✓ " + res.message() + " (" + res.serviceName() + ")\u001B[0m");
+                return 0;
+            } else {
+                err.println("\u001B[31m✗ " + res.message() + "\u001B[0m");
+                return 1;
+            }
         }
     }
 

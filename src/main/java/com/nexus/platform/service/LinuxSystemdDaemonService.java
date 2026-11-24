@@ -83,16 +83,16 @@ public class LinuxSystemdDaemonService implements DaemonServiceProvider {
                 [Service]
                 Type=simple
                 %sExecStart=%s daemon start --foreground
-                ExecStop=%s daemon stop
                 Restart=always
                 RestartSec=5s
+                KillSignal=SIGTERM
                 TimeoutStopSec=15s
                 StandardOutput=journal
                 StandardError=journal
 
                 [Install]
                 WantedBy=%s
-                """, userDirectives, binaryPath, binaryPath, wantedBy);
+                """, userDirectives, binaryPath, wantedBy);
 
         try {
             if (systemScope) {
@@ -173,6 +173,43 @@ public class LinuxSystemdDaemonService implements DaemonServiceProvider {
         boolean ok = code == 0;
         return new ServiceOperationResult(ok, "STOP", SERVICE_NAME, unitPath.toString(),
                 ok ? "Stopped Nexus daemon background service" : "Failed to stop unit (exit code " + code + ")");
+    }
+
+    @Override
+    public ServiceOperationResult restartService(boolean systemScope) {
+        Path unitPath = resolveUnitPath(systemScope);
+        if (!Files.exists(unitPath)) {
+            return new ServiceOperationResult(false, "RESTART", SERVICE_NAME, unitPath.toString(), "Unit file does not exist. Run 'nexus daemon install' first.");
+        }
+
+        // Auto-heal legacy unit file containing ExecStop if detected
+        try {
+            String content = Files.readString(unitPath);
+            if (content.contains("ExecStop=")) {
+                log.info("Detected legacy ExecStop directive in {}. Auto-healing unit definition...", unitPath);
+                String binary = extractBinaryFromUnit(content);
+                if (binary != null && !binary.isBlank()) {
+                    installService(systemScope, isServiceEnabled(systemScope), binary);
+                }
+            }
+        } catch (Exception ignored) {}
+
+        int code = runSystemctl(systemScope, List.of("restart", SERVICE_NAME));
+        boolean ok = code == 0;
+        return new ServiceOperationResult(ok, "RESTART", SERVICE_NAME, unitPath.toString(),
+                ok ? "Restarted Nexus daemon background service" : "Failed to restart unit (exit code " + code + ")");
+    }
+
+    private String extractBinaryFromUnit(String content) {
+        for (String line : content.split("\n")) {
+            line = line.trim();
+            if (line.startsWith("ExecStart=")) {
+                String cmd = line.substring("ExecStart=".length()).trim();
+                String[] parts = cmd.split("\\s+");
+                if (parts.length > 0) return parts[0];
+            }
+        }
+        return "/usr/local/bin/nexus";
     }
 
     @Override

@@ -69,7 +69,8 @@ class DaemonServiceManagerTest {
         String content = Files.readString(customService.resolveUnitPath(false));
         assertThat(content).contains("ExecStart=");
         assertThat(content).contains("daemon start --foreground");
-        assertThat(content).contains("daemon stop");
+        assertThat(content).doesNotContain("ExecStop=");
+        assertThat(content).contains("KillSignal=SIGTERM");
         assertThat(content).contains("Restart=always");
 
         // 3. Status
@@ -77,7 +78,11 @@ class DaemonServiceManagerTest {
         assertThat(status.installed()).isTrue();
         assertThat(status.serviceName()).isEqualTo("nexus.service");
 
-        // 4. Uninstall
+        // 4. Restart
+        ServiceOperationResult restartResult = customManager.restartService(false);
+        assertThat(restartResult.action()).isEqualTo("RESTART");
+
+        // 5. Uninstall
         ServiceOperationResult uninstallResult = customManager.uninstallService(false);
         assertThat(uninstallResult.success()).isTrue();
         assertThat(customManager.isServiceInstalled(false)).isFalse();

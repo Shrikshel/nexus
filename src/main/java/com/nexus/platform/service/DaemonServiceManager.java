@@ -98,6 +98,13 @@ public class DaemonServiceManager {
         return activeProvider.stopService(systemScope);
     }
 
+    public ServiceOperationResult restartService(boolean systemScope) {
+        if (activeProvider == null) {
+            return new ServiceOperationResult(false, "RESTART", "nexus", "", "No supported service supervisor detected.");
+        }
+        return activeProvider.restartService(systemScope);
+    }
+
     public ServiceOperationResult uninstallService(boolean systemScope) {
         if (activeProvider == null) {
             return new ServiceOperationResult(false, "UNINSTALL", "nexus", "", "No supported service supervisor detected.");

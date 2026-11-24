@@ -25,6 +25,8 @@ public interface DaemonServiceProvider {
 
     ServiceOperationResult stopService(boolean systemScope);
 
+    ServiceOperationResult restartService(boolean systemScope);
+
     ServiceOperationResult uninstallService(boolean systemScope);
 
     ServiceStatusDetails getServiceStatus(boolean systemScope);
