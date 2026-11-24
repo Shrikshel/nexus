@@ -19,7 +19,7 @@ class NexusTuiLauncherTest {
     @DisplayName("NexusTuiLauncher starts, handles tabs, and quits cleanly on 'q'")
     void testLaunchWithQuit() throws Exception {
         OverviewScreen overview = new OverviewScreen(null, null, null, null);
-        TimersScreen timers = new TimersScreen(null);
+        TimersScreen timers = new TimersScreen(null, null);
         RemindersScreen reminders = new RemindersScreen(null);
         SystemScreen system = new SystemScreen(null);
 
@@ -42,7 +42,7 @@ class NexusTuiLauncherTest {
     @DisplayName("NexusTuiLauncher cycles tabs using Tab key")
     void testLaunchWithTabCycle() throws Exception {
         OverviewScreen overview = new OverviewScreen(null, null, null, null);
-        TimersScreen timers = new TimersScreen(null);
+        TimersScreen timers = new TimersScreen(null, null);
         RemindersScreen reminders = new RemindersScreen(null);
         SystemScreen system = new SystemScreen(null);
 

@@ -125,7 +125,10 @@ public class NexusTuiLauncher {
                     KeyType type = stroke.getKeyType();
                     Character ch = stroke.getCharacter();
 
-                    if (type == KeyType.Escape || type == KeyType.EOF ||
+                    boolean handled = screens.get(currentScreenIndex).handleInput(stroke);
+                    if (handled) {
+                        needsRender = true;
+                    } else if (type == KeyType.Escape || type == KeyType.EOF ||
                             (type == KeyType.Character && (ch == 'q' || ch == 'Q'))) {
                         running = false;
                         break;
@@ -144,11 +147,6 @@ public class NexusTuiLauncher {
                     } else if (type == KeyType.Character && (ch == 'r' || ch == 'R')) {
                         screens.get(currentScreenIndex).refresh();
                         needsRender = true;
-                    } else {
-                        boolean handled = screens.get(currentScreenIndex).handleInput(stroke);
-                        if (handled) {
-                            needsRender = true;
-                        }
                     }
                 }
 
