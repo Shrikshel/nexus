@@ -464,22 +464,36 @@ nexus timer delete NX001 --purge-script -y  # Also deletes associated executable
 ```
 
 #### 8. Event & Birthday Reminder Engine (`nexus reminder` / `nx reminder`)
-Nexus includes a native, zero-overhead event and notification milestone scheduler designed for birthdays, recurring bills, anniversaries, and operational events. It couples single-file atomic JSON persistence (`~/.nexus/data/reminders.json` or `/root/.nexus/data/reminders.json`) with hardware-level systemd timer wakeups (`Persistent=true`, multi-`OnCalendar` entries per pending stage, 0% CPU idle burn) and automated recurrence rollover across any interval (`DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`, `NONE`):
+Nexus includes a native, zero-overhead event and notification milestone scheduler designed for birthdays, recurring bills, anniversaries, and operational routines. It couples atomic JSON persistence (`~/.nexus/data/reminders.json` and system-wide `/root/.nexus/data/reminders.json`, mirrored to world-readable `/etc/nexus/data/reminders.json`) with hardware-level systemd timer wakeups (`Persistent=true`, multi-`OnCalendar` entries per pending stage, 0% CPU idle burn):
 
-- **Multi-Stage Milestones**: Configurable alert milestones (e.g. `7d,3d,1d,1h,0m`) with stage progression and smart message synthesis.
+- **Multi-Scope Visibility**: `nexus reminder list` displays reminders across all scopes (`--all` default, `--system`, `--user`), letting unprivileged users inspect 24/7 system reminders without requiring `sudo`.
+- **Flexible Recurrence Engine**: Supports arbitrary intervals (`every 45m`, `every 16h`, `every 2d`, `every 3mo`, `every 1y`) alongside standard presets (`NONE`, `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY` / `ANNUAL`).
+- **Calendar Anchor Protection**: Preserves calendar day-of-month and month anchors:
+  - **Leap Years (Feb 29)**: Safely falls on Feb 28 in non-leap years, and automatically snaps back to **Feb 29** in leap years.
+  - **Day-of-Month (e.g. 15th)**: Steps by calendar months (`Jan 15` → `Apr 15` → `Jul 15`), never drifting across 28, 30, or 31-day months.
+  - **Month-End (31st)**: Clamps to Feb 28/29 or Apr 30 without permanently degrading to the 28th.
+- **Auto-Skip Overdue Milestones**: Adding reminders mid-day automatically marks already-elapsed countdown stages as `SKIPPED`, locking `Next Alert` onto the first upcoming future stage.
+- **Multi-Event Next Alerts**: `nexus reminder next` displays all events scheduled at the exact same earliest trigger time, avoiding hidden milestones.
+- **Copy-Paste Parameter Template**: `nexus reminder template` (alias: `example`) and `nexus reminder add -e` print a full copy-pasteable command block with all options populated and popular recipes.
 - **Birthday Age Celebrations**: Automatic milestone age calculation for birthdays based on `--birth-year` (e.g. *"Alice's Birthday is today! Celebrating 36 years today! 🎂"*).
-- **Recurrence Rollover**: Automatic rollover across annual, monthly, weekly, or daily cycles with archive history upon cycle completion.
 - **Dual-ID Architecture**: Friendly natural identifiers (`EVT-001`, `EVT-002`, `EVT-MOM-BDAY`) for clean CLI ergonomics, paired with system-internal immutable UUIDv4 (`uuid`) for collision-free import/export merging.
-- **Privilege Separation**: Mutating commands (`add`, `edit`, `delete`, `import`, `sync`) require `sudo` so background systemd timers run 24/7 as root; read-only commands (`list`, `next`, `show`, `export`) are accessible to all users.
+- **Privilege Separation**: Mutating commands (`add`, `edit`, `delete`, `import`, `sync`) require `sudo` so background systemd timers run 24/7 as root; read-only commands (`list`, `next`, `show`, `export`, `template`, `test`) are accessible to all users.
 
 ```bash
-# List all active scheduled reminders and next notification milestones
+# Print a complete copy-pasteable command template with all parameters and recipes
+nexus reminder template
+nexus reminder add --example
+
+# List reminders across all scopes (system + user) with SCOPE column (default)
 nexus reminder list
-nexus reminder list --type BIRTHDAY      # Filter by type (BIRTHDAY, BILL, ANNIVERSARY, MEETING, EVENT)
+nexus reminder list --system              # Filter to system scope only
+nexus reminder list --user                # Filter to user scope only
+nexus reminder list --type BIRTHDAY       # Filter by type (BIRTHDAY, BILL, ANNIVERSARY, MEETING, EVENT)
 nexus reminder list --json
 
-# View immediate next upcoming reminder with countdown
+# View immediate next upcoming reminder(s) — lists all events if multiple share the same time
 nexus reminder next
+nexus reminder next --system
 
 # Inspect detailed reminder configuration, stage progression, and history
 nexus reminder show EVT-001
@@ -487,11 +501,23 @@ nexus reminder show EVT-001
 # Create a new birthday reminder with automatic milestone age calculation (requires sudo)
 sudo nexus reminder add --title "Mom's Birthday" --date 2026-11-25 --type BIRTHDAY --birth-year 1966
 
-# Create a recurring server bill with custom alert stages (requires sudo)
-sudo nexus reminder add --title "AWS Hosting Bill" --date 2026-12-01 --stages 7d,3d,1d,0m --type BILL --recurrence MONTHLY
+# Create a recurring bill with calendar-anchored monthly recurrence (requires sudo)
+sudo nexus reminder add --title "AWS Hosting Bill" --date 2026-12-05 --time 09:00:00 --type BILL --recurrence "1mo" --stages 3d,1d,0m
 
-# Edit an existing reminder (e.g. update target time, add custom stage message, or update stages)
+# Create a micro-routine recurring every 45 minutes (requires sudo)
+sudo nexus reminder add --title "Hydration Break" --date 2026-11-24 --time 10:00:00 --recurrence "every 45m" --stages 0m
+
+# Create an operational shift reminder recurring every 16 hours (requires sudo)
+sudo nexus reminder add --title "Shift Handover" --date 2026-11-24 --time 18:00:00 --recurrence "16h" --stages 30m,0m
+
+# Create a multi-day maintenance routine recurring every 2 days (requires sudo)
+sudo nexus reminder add --title "ZFS Scrub Check" --date 2026-11-25 --time 03:00:00 --recurrence "every 2d"
+
+# Edit an existing reminder (update time, recurrence, custom stage messages, or notes)
 sudo nexus reminder edit EVT-001 --time 10:00:00 --stages 3d,1d,0m --stage-msg "0m=Pay immediate hosting invoice"
+
+# Reconcile all systemd timers, auto-skip overdue stages, and update hardware units (requires sudo)
+sudo nexus reminder sync
 
 # Send a test notification to Telegram without altering stage progression
 nexus reminder test EVT-001

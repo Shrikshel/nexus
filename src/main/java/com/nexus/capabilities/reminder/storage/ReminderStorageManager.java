@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.nexus.capabilities.reminder.dto.*;
+import com.nexus.capabilities.scheduler.timer.dto.TimerScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -35,6 +36,9 @@ public class ReminderStorageManager {
     private static final Logger log = LoggerFactory.getLogger(ReminderStorageManager.class);
     private static final Pattern EVT_NUMBER_PATTERN = Pattern.compile("^EVT-(\\d+)$", Pattern.CASE_INSENSITIVE);
 
+    public static final Path SYSTEM_ROOT_PATH = Path.of("/root/.nexus/data/reminders.json");
+    public static final Path SYSTEM_MIRROR_PATH = Path.of("/etc/nexus/data/reminders.json");
+
     private final ObjectMapper objectMapper;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private Path customStoragePath;
@@ -60,34 +64,80 @@ public class ReminderStorageManager {
 
         String user = System.getProperty("user.name", "");
         if ("root".equalsIgnoreCase(user)) {
-            return Path.of("/root/.nexus/data/reminders.json");
+            return SYSTEM_ROOT_PATH;
         }
 
-        Path rootPath = Path.of("/root/.nexus/data/reminders.json");
-        if (Files.isReadable(rootPath)) {
-            return rootPath;
+        if (Files.isReadable(SYSTEM_ROOT_PATH)) {
+            return SYSTEM_ROOT_PATH;
+        }
+
+        if (Files.isReadable(SYSTEM_MIRROR_PATH)) {
+            return SYSTEM_MIRROR_PATH;
         }
 
         return Path.of(System.getProperty("user.home"), ".nexus", "data", "reminders.json");
     }
 
-    public List<ReminderEvent> loadAll() {
-        lock.readLock().lock();
+    private List<ReminderEvent> loadFromPathOrFallback(Path path, TimerScope scope) {
+        if (path != null && Files.exists(path) && Files.isReadable(path)) {
+            try {
+                byte[] bytes = Files.readAllBytes(path);
+                if (bytes.length > 0) {
+                    return parseEvents(bytes, scope);
+                }
+            } catch (Exception e) {
+                log.warn("Could not read reminders from {}: {}", path, e.getMessage());
+            }
+        }
+
+        // If SYSTEM scope and unreadable directly, check shared world-readable mirror
+        if (scope == TimerScope.SYSTEM) {
+            if (Files.exists(SYSTEM_MIRROR_PATH) && Files.isReadable(SYSTEM_MIRROR_PATH)) {
+                try {
+                    byte[] bytes = Files.readAllBytes(SYSTEM_MIRROR_PATH);
+                    if (bytes.length > 0) {
+                        return parseEvents(bytes, TimerScope.SYSTEM);
+                    }
+                } catch (Exception e) {
+                    log.warn("Could not read reminders from mirror {}: {}", SYSTEM_MIRROR_PATH, e.getMessage());
+                }
+            }
+
+            // Fallback: If running as non-root on Linux, attempt sudo -n cat
+            if (!"root".equalsIgnoreCase(System.getProperty("user.name"))) {
+                try {
+                    Process p = new ProcessBuilder("sudo", "-n", "cat", path.toString()).start();
+                    byte[] bytes = p.getInputStream().readAllBytes();
+                    int exit = p.waitFor();
+                    if (exit == 0 && bytes.length > 0) {
+                        return parseEvents(bytes, TimerScope.SYSTEM);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }
+
+        return new ArrayList<>();
+    }
+
+    private List<ReminderEvent> parseEvents(byte[] bytes, TimerScope scope) {
         try {
-            Path file = resolveStoragePath();
-            if (!Files.exists(file) || Files.size(file) == 0) {
-                return new ArrayList<>();
-            }
-            JsonNode root = objectMapper.readTree(file.toFile());
+            JsonNode root = objectMapper.readTree(bytes);
             JsonNode eventsNode = root.path("events");
-            if (!eventsNode.isArray()) {
-                return new ArrayList<>();
-            }
+            if (!eventsNode.isArray()) return new ArrayList<>();
             List<ReminderEvent> list = new ArrayList<>();
             for (JsonNode item : eventsNode) {
                 try {
                     ReminderEvent event = objectMapper.treeToValue(item, ReminderEvent.class);
                     if (event != null) {
+                        if (!event.metadata().containsKey("scope")) {
+                            Map<String, Object> meta = new LinkedHashMap<>(event.metadata());
+                            meta.put("scope", scope == TimerScope.SYSTEM ? "SYSTEM" : "USER");
+                            event = new ReminderEvent(
+                                    event.uuid(), event.id(), event.title(), event.type(), event.category(),
+                                    event.targetDate(), event.targetTime(), event.timezone(), event.recurrence(),
+                                    meta, event.stages(), event.state(), event.history()
+                            );
+                        }
                         list.add(event);
                     }
                 } catch (Exception e) {
@@ -96,11 +146,43 @@ public class ReminderStorageManager {
             }
             return list;
         } catch (Exception e) {
-            log.error("Failed to load reminders from {}: {}", resolveStoragePath(), e.getMessage());
+            log.error("Failed to parse reminders JSON: {}", e.getMessage());
             return new ArrayList<>();
+        }
+    }
+
+    public List<ReminderEvent> loadAll(TimerScope scope) {
+        lock.readLock().lock();
+        try {
+            if (customStoragePath != null) {
+                return new ArrayList<>(loadFromPathOrFallback(customStoragePath, TimerScope.USER));
+            }
+
+            TimerScope effective = scope != null ? scope : TimerScope.ALL;
+            if (effective == TimerScope.SYSTEM) {
+                return new ArrayList<>(loadFromPathOrFallback(SYSTEM_ROOT_PATH, TimerScope.SYSTEM));
+            } else if (effective == TimerScope.USER) {
+                Path userPath = Path.of(System.getProperty("user.home"), ".nexus", "data", "reminders.json");
+                return new ArrayList<>(loadFromPathOrFallback(userPath, TimerScope.USER));
+            } else {
+                // ALL scopes: merge SYSTEM then USER
+                Map<String, ReminderEvent> merged = new LinkedHashMap<>();
+                for (ReminderEvent e : loadFromPathOrFallback(SYSTEM_ROOT_PATH, TimerScope.SYSTEM)) {
+                    merged.put(e.uuid(), e);
+                }
+                Path userPath = Path.of(System.getProperty("user.home"), ".nexus", "data", "reminders.json");
+                for (ReminderEvent e : loadFromPathOrFallback(userPath, TimerScope.USER)) {
+                    merged.putIfAbsent(e.uuid(), e);
+                }
+                return new ArrayList<>(merged.values());
+            }
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    public List<ReminderEvent> loadAll() {
+        return loadAll(TimerScope.ALL);
     }
 
     public Optional<ReminderEvent> findByIdOrUuid(String identifier) {
@@ -448,16 +530,26 @@ public class ReminderStorageManager {
         }
     }
 
+    private void writeAtomicFile(Path targetFile, byte[] bytes) throws IOException {
+        Path parentDir = targetFile.getParent();
+        if (parentDir != null && !Files.exists(parentDir)) {
+            Files.createDirectories(parentDir);
+        }
+
+        Path tmpFile = parentDir.resolve(targetFile.getFileName() + ".tmp." + System.nanoTime());
+        try (FileOutputStream fos = new FileOutputStream(tmpFile.toFile())) {
+            fos.write(bytes);
+            fos.flush();
+            fos.getFD().sync(); // Hard sync to disk
+        }
+
+        Files.move(tmpFile, targetFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        targetFile.toFile().setReadable(true, false);
+    }
+
     private void saveAllAtomic(List<ReminderEvent> events) {
         Path targetFile = resolveStoragePath();
-        Path parentDir = targetFile.getParent();
         try {
-            if (parentDir != null && !Files.exists(parentDir)) {
-                Files.createDirectories(parentDir);
-            }
-
-            Path tmpFile = parentDir.resolve(targetFile.getFileName() + ".tmp." + System.nanoTime());
-
             Map<String, Object> root = new LinkedHashMap<>();
             root.put("version", 1);
             root.put("updatedAt", Instant.now().toString());
@@ -465,15 +557,16 @@ public class ReminderStorageManager {
             root.put("events", events);
 
             byte[] bytes = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(root);
+            writeAtomicFile(targetFile, bytes);
 
-            try (FileOutputStream fos = new FileOutputStream(tmpFile.toFile())) {
-                fos.write(bytes);
-                fos.flush();
-                fos.getFD().sync(); // Hard sync to disk
+            // If saving as root in system scope, also maintain a world-readable mirror in /etc/nexus/data/reminders.json
+            if (customStoragePath == null && "root".equalsIgnoreCase(System.getProperty("user.name"))) {
+                try {
+                    writeAtomicFile(SYSTEM_MIRROR_PATH, bytes);
+                } catch (Exception e) {
+                    log.debug("Could not write /etc/nexus mirror: {}", e.getMessage());
+                }
             }
-
-            Files.move(tmpFile, targetFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            targetFile.toFile().setReadable(true, false);
         } catch (IOException e) {
             log.error("Atomic write failed for {}: {}", targetFile, e.getMessage(), e);
             throw new RuntimeException("Failed to persist reminders atomically: " + e.getMessage(), e);

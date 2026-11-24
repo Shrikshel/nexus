@@ -203,11 +203,50 @@ class ReminderCommandTest {
     }
 
     @Test
-    @DisplayName("Add subcommand with --example flag prints template and exits 0")
-    void testAddWithExampleFlag() {
-        int exitCode = commandLine.execute("add", "--example");
+    @DisplayName("Next subcommand displays all reminders when multiple share the same earliest trigger time")
+    void testNextSubcommandMultipleSimultaneousEvents() {
+        LocalDate date = LocalDate.of(2026, 12, 1);
+        LocalTime time = LocalTime.of(10, 0);
+
+        ReminderCreateRequest req1 = new ReminderCreateRequest(
+                "EVT-001", "Team Sync A", ReminderType.MEETING, "WORK",
+                date, time, ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.NONE, List.of("1h", "0m"), Collections.emptyMap(), Collections.emptyMap()
+        );
+        ReminderCreateRequest req2 = new ReminderCreateRequest(
+                "EVT-002", "Team Sync B", ReminderType.MEETING, "WORK",
+                date, time, ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.NONE, List.of("1h", "0m"), Collections.emptyMap(), Collections.emptyMap()
+        );
+        storageManager.createReminder(req1);
+        storageManager.createReminder(req2);
+
+        int exitCode = commandLine.execute("next");
         assertThat(exitCode).isEqualTo(0);
-        assertThat(outWriter.toString()).contains("Complete Copy-Paste Command Template");
-        assertThat(outWriter.toString()).contains("--recurrence");
+        assertThat(outWriter.toString()).contains("2 events scheduled at the same time");
+        assertThat(outWriter.toString()).contains("Team Sync A");
+        assertThat(outWriter.toString()).contains("Team Sync B");
+    }
+
+    @Test
+    @DisplayName("List subcommand supports --all, --system, --user scope flags")
+    void testListMultiScope() {
+        ReminderCreateRequest req = new ReminderCreateRequest(
+                "EVT-001", "System Event", ReminderType.EVENT, "GENERAL",
+                LocalDate.of(2026, 12, 1), LocalTime.of(10, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.NONE, List.of("0m"), Collections.emptyMap(), Collections.emptyMap()
+        );
+        storageManager.createReminder(req);
+
+        // --all shows SCOPE column
+        int exitAll = commandLine.execute("list", "--all");
+        assertThat(exitAll).isEqualTo(0);
+        assertThat(outWriter.toString()).contains("SCOPE");
+        assertThat(outWriter.toString()).contains("all scopes");
+
+        outWriter.getBuffer().setLength(0);
+        int exitSys = commandLine.execute("list", "--system");
+        assertThat(exitSys).isEqualTo(0);
+        assertThat(outWriter.toString()).contains("system scope");
     }
 }

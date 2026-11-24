@@ -8,6 +8,7 @@ import com.nexus.capabilities.reminder.dispatch.ReminderDispatchService;
 import com.nexus.capabilities.reminder.dto.*;
 import com.nexus.capabilities.reminder.scheduler.ReminderSchedulerProvider;
 import com.nexus.capabilities.reminder.storage.ReminderStorageManager;
+import com.nexus.capabilities.scheduler.timer.dto.TimerScope;
 import org.springframework.stereotype.Component;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
@@ -107,6 +108,16 @@ public class ReminderCommand implements Callable<Integer> {
         private CommandSpec spec;
         @ParentCommand
         private ReminderCommand parent;
+
+        @Option(names = {"--system"}, description = "Target system-wide scope instead of user scope")
+        private boolean system;
+
+        @Option(names = {"--user"}, description = "Target user scope explicitly")
+        private boolean user;
+
+        @Option(names = {"--all"}, description = "List reminders across all scopes (default)")
+        private boolean allScopes;
+
         @Option(names = {"--type"}, description = "Filter by type (BIRTHDAY, BILL, ANNIVERSARY, MEETING, EVENT)")
         private String typeFilter;
 
@@ -114,7 +125,9 @@ public class ReminderCommand implements Callable<Integer> {
         public Integer call() {
             PrintWriter out = spec.commandLine().getOut();
             boolean json = isJsonRequested(spec, parent);
-            List<ReminderEvent> all = parent.getStorageManager().loadAll();
+
+            TimerScope scope = system && !user ? TimerScope.SYSTEM : (user && !system ? TimerScope.USER : TimerScope.ALL);
+            List<ReminderEvent> all = parent.getStorageManager().loadAll(scope);
 
             if (typeFilter != null && !typeFilter.isBlank()) {
                 ReminderType t = ReminderType.fromString(typeFilter);
@@ -126,7 +139,9 @@ public class ReminderCommand implements Callable<Integer> {
                 return 0;
             }
 
-            out.println("\u001B[1;36m=== Nexus Scheduled Reminders & Events ===\u001B[0m");
+            boolean showScope = scope == TimerScope.ALL;
+            String scopeTitle = showScope ? "all scopes" : scope.name().toLowerCase(Locale.ROOT) + " scope";
+            out.println("\u001B[1;36m=== Nexus Scheduled Reminders & Events (" + scopeTitle + ") ===\u001B[0m");
             if (all.isEmpty()) {
                 out.println("  ℹ No reminders currently configured.");
                 out.println("  👉 Add your first reminder with: sudo nexus reminder add --title \"Mom's Birthday\" --date 2026-11-25 --type BIRTHDAY");
@@ -134,9 +149,15 @@ public class ReminderCommand implements Callable<Integer> {
             }
 
             DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-            out.printf("  %-10s  %-24s  %-10s  %-12s  %-20s  %-6s  %-10s%n",
-                    "ID", "TITLE", "TYPE", "EVENT DATE", "NEXT ALERT", "STAGE", "STATUS");
-            out.println("  --------------------------------------------------------------------------------------------------");
+            if (showScope) {
+                out.printf("  %-10s  %-8s  %-24s  %-10s  %-12s  %-20s  %-6s  %-10s%n",
+                        "ID", "SCOPE", "TITLE", "TYPE", "EVENT DATE", "NEXT ALERT", "STAGE", "STATUS");
+                out.println("  ------------------------------------------------------------------------------------------------------------");
+            } else {
+                out.printf("  %-10s  %-24s  %-10s  %-12s  %-20s  %-6s  %-10s%n",
+                        "ID", "TITLE", "TYPE", "EVENT DATE", "NEXT ALERT", "STAGE", "STATUS");
+                out.println("  --------------------------------------------------------------------------------------------------");
+            }
 
             Instant now = Instant.now();
             for (ReminderEvent e : all) {
@@ -150,15 +171,28 @@ public class ReminderCommand implements Callable<Integer> {
 
                 String dateRel = formatRelativeDays(e.targetDate(), e.timezone());
                 String statusColor = "ACTIVE".equalsIgnoreCase(e.state().status()) ? "\u001B[32mACTIVE\u001B[0m" : "\u001B[33m" + e.state().status() + "\u001B[0m";
+                String scopeStr = e.metadata().getOrDefault("scope", "system").toString().toLowerCase(Locale.ROOT);
 
-                out.printf("  \u001B[1;33m%-10s\u001B[0m  %-24s  \u001B[36m%-10s\u001B[0m  %-12s  %-20s  \u001B[1;35m%-6s\u001B[0m  %s%n",
-                        truncate(e.id(), 10),
-                        truncate(e.title(), 24),
-                        truncate(e.type().name(), 10),
-                        e.targetDate().toString() + " (" + dateRel + ")",
-                        nextAlertStr,
-                        nextStageStr,
-                        statusColor);
+                if (showScope) {
+                    out.printf("  \u001B[1;33m%-10s\u001B[0m  %-8s  %-24s  \u001B[36m%-10s\u001B[0m  %-12s  %-20s  \u001B[1;35m%-6s\u001B[0m  %s%n",
+                            truncate(e.id(), 10),
+                            scopeStr,
+                            truncate(e.title(), 24),
+                            truncate(e.type().name(), 10),
+                            e.targetDate().toString() + " (" + dateRel + ")",
+                            nextAlertStr,
+                            nextStageStr,
+                            statusColor);
+                } else {
+                    out.printf("  \u001B[1;33m%-10s\u001B[0m  %-24s  \u001B[36m%-10s\u001B[0m  %-12s  %-20s  \u001B[1;35m%-6s\u001B[0m  %s%n",
+                            truncate(e.id(), 10),
+                            truncate(e.title(), 24),
+                            truncate(e.type().name(), 10),
+                            e.targetDate().toString() + " (" + dateRel + ")",
+                            nextAlertStr,
+                            nextStageStr,
+                            statusColor);
+                }
             }
             out.println();
             return 0;
@@ -174,47 +208,79 @@ public class ReminderCommand implements Callable<Integer> {
         @ParentCommand
         private ReminderCommand parent;
 
+        @Option(names = {"--system"}, description = "Target system-wide scope instead of user scope")
+        private boolean system;
+
+        @Option(names = {"--user"}, description = "Target user scope explicitly")
+        private boolean user;
+
         @Override
         public Integer call() {
             PrintWriter out = spec.commandLine().getOut();
             boolean json = isJsonRequested(spec, parent);
-            List<ReminderEvent> all = parent.getStorageManager().loadAll();
 
-            ReminderEvent nextEvent = null;
+            TimerScope scope = system && !user ? TimerScope.SYSTEM : (user && !system ? TimerScope.USER : TimerScope.ALL);
+            List<ReminderEvent> all = parent.getStorageManager().loadAll(scope);
+
             Instant earliest = null;
+            List<ReminderEvent> nextEvents = new ArrayList<>();
 
             for (ReminderEvent e : all) {
                 if ("ACTIVE".equalsIgnoreCase(e.state().status()) && e.state().nextTriggerAt() != null) {
-                    if (earliest == null || e.state().nextTriggerAt().isBefore(earliest)) {
-                        earliest = e.state().nextTriggerAt();
-                        nextEvent = e;
+                    Instant trigger = e.state().nextTriggerAt();
+                    if (earliest == null || trigger.isBefore(earliest)) {
+                        earliest = trigger;
+                        nextEvents.clear();
+                        nextEvents.add(e);
+                    } else if (trigger.equals(earliest)) {
+                        nextEvents.add(e);
                     }
                 }
             }
 
             if (json) {
-                out.println(nextEvent != null ? toJson(nextEvent) : "{}");
+                if (nextEvents.isEmpty()) {
+                    out.println("{}");
+                } else if (nextEvents.size() == 1) {
+                    out.println(toJson(nextEvents.get(0)));
+                } else {
+                    out.println(toJson(nextEvents));
+                }
                 return 0;
             }
 
-            out.println("\u001B[1;36m=== Next Upcoming Reminder ===\u001B[0m");
-            if (nextEvent == null) {
+            if (nextEvents.isEmpty()) {
+                out.println("\u001B[1;36m=== Next Upcoming Reminder ===\u001B[0m");
                 out.println("  ℹ No active pending reminder alerts found.");
                 return 0;
             }
 
             DateTimeFormatter dtf = DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy HH:mm:ss (z)");
+            if (nextEvents.size() == 1) {
+                out.println("\u001B[1;36m=== Next Upcoming Reminder ===\u001B[0m");
+                printSingleNextEvent(out, nextEvents.get(0), dtf);
+            } else {
+                out.printf("\u001B[1;36m=== Next Upcoming Reminders (%d events scheduled at the same time) ===\u001B[0m%n", nextEvents.size());
+                for (int i = 0; i < nextEvents.size(); i++) {
+                    if (i > 0) out.println("  --------------------------------------------------");
+                    printSingleNextEvent(out, nextEvents.get(i), dtf);
+                }
+            }
+            return 0;
+        }
+
+        private void printSingleNextEvent(PrintWriter out, ReminderEvent nextEvent, DateTimeFormatter dtf) {
             ZonedDateTime eventZdt = ZonedDateTime.of(nextEvent.targetDate(), nextEvent.targetTime(), nextEvent.timezone());
             ZonedDateTime alertZdt = nextEvent.state().nextTriggerAt().atZone(nextEvent.timezone());
+            String scopeStr = nextEvent.metadata().getOrDefault("scope", isRoot() ? "SYSTEM" : "USER").toString().toUpperCase(Locale.ROOT);
 
-            out.println("  • ID          : \u001B[1;33m" + nextEvent.id() + "\u001B[0m");
+            out.println("  • ID          : \u001B[1;33m" + nextEvent.id() + "\u001B[0m (" + scopeStr + " scope)");
             out.println("  • Title       : \u001B[1;37m" + nextEvent.title() + "\u001B[0m");
             out.println("  • Type        : \u001B[36m" + nextEvent.type() + "\u001B[0m (" + nextEvent.category() + ")");
             out.println("  • Event Date  : " + eventZdt.format(dtf) + " [" + formatRelativeDays(nextEvent.targetDate(), nextEvent.timezone()) + "]");
             out.println("  • Next Alert  : \u001B[1;32m" + alertZdt.format(dtf) + "\u001B[0m");
             out.println("  • Stage       : \u001B[1;35m" + nextEvent.state().nextStage() + "\u001B[0m");
             out.println("  • Recurrence  : " + nextEvent.recurrence());
-            return 0;
         }
     }
 
@@ -247,8 +313,10 @@ public class ReminderCommand implements Callable<Integer> {
                 return 0;
             }
 
+            String scopeStr = e.metadata().getOrDefault("scope", isRoot() ? "SYSTEM" : "USER").toString().toUpperCase(Locale.ROOT);
             out.println("\u001B[1;36m=== Reminder Details: " + e.title() + " ===\u001B[0m");
             out.println("  • Friendly ID  : \u001B[1;33m" + e.id() + "\u001B[0m");
+            out.println("  • Scope        : " + scopeStr);
             out.println("  • System UUID  : \u001B[90m" + e.uuid() + "\u001B[0m");
             out.println("  • Type         : \u001B[36m" + e.type() + "\u001B[0m (Category: " + e.category() + ")");
             out.println("  • Target Date  : " + e.targetDate() + " at " + e.targetTime() + " (" + e.timezone() + ")");
