@@ -117,6 +117,11 @@ public class TelegramBotAdapter implements SmartLifecycle {
         return running.get();
     }
 
+    @Override
+    public boolean isAutoStartup() {
+        return false;
+    }
+
     private void pollLoop() {
         NexusProperties.TelegramConfig config = properties.getTelegram();
         long backoffMs = 1000;

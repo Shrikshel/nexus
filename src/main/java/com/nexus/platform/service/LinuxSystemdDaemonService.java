@@ -68,6 +68,12 @@ public class LinuxSystemdDaemonService implements DaemonServiceProvider {
         Path unitPath = resolveUnitPath(systemScope);
         String wantedBy = systemScope ? "multi-user.target" : "default.target";
 
+        String userDirectives = systemScope ? """
+                User=root
+                WorkingDirectory=/root
+                Environment=HOME=/root
+                """ : "";
+
         String unitContent = String.format("""
                 [Unit]
                 Description=Nexus Host Management Agent Daemon
@@ -76,7 +82,7 @@ public class LinuxSystemdDaemonService implements DaemonServiceProvider {
 
                 [Service]
                 Type=simple
-                ExecStart=%s daemon start --foreground
+                %sExecStart=%s daemon start --foreground
                 ExecStop=%s daemon stop
                 Restart=always
                 RestartSec=5s
@@ -86,10 +92,11 @@ public class LinuxSystemdDaemonService implements DaemonServiceProvider {
 
                 [Install]
                 WantedBy=%s
-                """, binaryPath, binaryPath, wantedBy);
+                """, userDirectives, binaryPath, binaryPath, wantedBy);
 
         try {
             if (systemScope) {
+                syncUserConfigToRootIfMissing();
                 // System scope requires elevated rights
                 File tmp = File.createTempFile("nexus-svc-", ".service");
                 Files.writeString(tmp.toPath(), unitContent, StandardCharsets.UTF_8);
@@ -246,6 +253,40 @@ public class LinuxSystemdDaemonService implements DaemonServiceProvider {
             } catch (Exception ignored) {}
         }
         return cleaned;
+    }
+
+    private void syncUserConfigToRootIfMissing() {
+        Path rootConfig = Path.of("/root/.nexus/config.yml");
+        if (Files.exists(rootConfig)) {
+            try {
+                if (Files.size(rootConfig) > 0) {
+                    return;
+                }
+            } catch (Exception ignored) {}
+        }
+        String sudoUser = System.getenv("SUDO_USER");
+        if (sudoUser != null && !sudoUser.isBlank() && !"root".equalsIgnoreCase(sudoUser)) {
+            List<Path> candidateUserConfigs = List.of(
+                    Path.of("/home", sudoUser, ".nexus", "config.yml"),
+                    Path.of("/home", sudoUser, ".nexus", "config.yaml")
+            );
+            for (Path userConfig : candidateUserConfigs) {
+                if (Files.exists(userConfig)) {
+                    try {
+                        if (Files.size(userConfig) > 0) {
+                            Files.createDirectories(rootConfig.getParent());
+                            Files.copy(userConfig, rootConfig, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            rootConfig.toFile().setReadable(true, true);
+                            rootConfig.toFile().setWritable(true, true);
+                            log.info("Synchronized configuration from {} to {}", userConfig, rootConfig);
+                            break;
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to copy user config to root: {}", e.getMessage());
+                    }
+                }
+            }
+        }
     }
 
     private int runSystemctl(boolean systemScope, List<String> args) {

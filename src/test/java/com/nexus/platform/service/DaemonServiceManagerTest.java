@@ -82,5 +82,13 @@ class DaemonServiceManagerTest {
         assertThat(uninstallResult.success()).isTrue();
         assertThat(customManager.isServiceInstalled(false)).isFalse();
         assertThat(Files.exists(customService.resolveUnitPath(false))).isFalse();
+
+        // 5. System scope unit content includes User=root and Environment=HOME=/root
+        ServiceOperationResult systemInstallResult = customManager.installService(true, false);
+        assertThat(systemInstallResult.success()).isTrue();
+        String systemContent = Files.readString(customService.resolveUnitPath(true));
+        assertThat(systemContent).contains("User=root");
+        assertThat(systemContent).contains("WorkingDirectory=/root");
+        assertThat(systemContent).contains("Environment=HOME=/root");
     }
 }

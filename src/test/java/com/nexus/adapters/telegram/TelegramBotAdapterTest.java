@@ -56,6 +56,12 @@ class TelegramBotAdapterTest {
     }
 
     @Test
+    @DisplayName("isAutoStartup is false so CLI commands do not launch background poller")
+    void testIsAutoStartupIsFalse() {
+        assertThat(adapter.isAutoStartup()).isFalse();
+    }
+
+    @Test
     @DisplayName("Drops and ignores updates from unauthorized chat IDs")
     void testUnauthorizedChatDropped() {
         ObjectNode unauthorizedUpdate = createUpdateJson(1, 888L, 100L, "/info");

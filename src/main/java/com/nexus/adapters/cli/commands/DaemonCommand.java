@@ -423,11 +423,20 @@ public class DaemonCommand implements Callable<Integer> {
         public Integer call() {
             PrintWriter out = spec.commandLine().getOut();
             PrintWriter err = spec.commandLine().getErr();
+
+            if (!isRoot()) {
+                err.println("\u001B[31m✗ Error: Stopping the Nexus background daemon service requires root privileges.\u001B[0m");
+                err.println("  👉 Please run with sudo:");
+                err.println("     sudo nexus daemon stop");
+                return 1;
+            }
+
+            boolean effectiveScope = true;
             boolean stopped = false;
 
             // 1. Try stopping through supervisor service if installed
-            if (parent.getServiceManager().isServiceInstalled(systemScope)) {
-                ServiceOperationResult res = parent.getServiceManager().stopService(systemScope);
+            if (parent.getServiceManager().isServiceInstalled(effectiveScope)) {
+                ServiceOperationResult res = parent.getServiceManager().stopService(effectiveScope);
                 if (res.success()) {
                     out.println("\u001B[32m✓ " + res.message() + " (" + res.serviceName() + ")\u001B[0m");
                     stopped = true;
