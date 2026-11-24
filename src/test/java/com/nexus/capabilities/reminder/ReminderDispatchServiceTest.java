@@ -147,6 +147,46 @@ class ReminderDispatchServiceTest {
     }
 
     @Test
+    @DisplayName("Auto-skips overdue stages before the arrived stage during dispatch")
+    void testAutoSkipsOverdueStagesOnDispatch() {
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+        ReminderStage stage7h = new ReminderStage("7h", "-PT7H", now.minusHours(2).toInstant(), null, null, ReminderStageStatus.PENDING);
+        ReminderStage stage6h = new ReminderStage("6h", "-PT6H", now.minusHours(1).toInstant(), null, null, ReminderStageStatus.PENDING);
+        ReminderStage stage5h = new ReminderStage("5h", "-PT5H", now.toInstant(), null, null, ReminderStageStatus.PENDING);
+        ReminderStage stage4h = new ReminderStage("4h", "-PT4H", now.plusHours(1).toInstant(), null, null, ReminderStageStatus.PENDING);
+
+        ReminderEventState state = new ReminderEventState("2026", "ACTIVE", null, "7h", stage7h.triggerAt());
+        ReminderEvent event = new ReminderEvent(
+                "evt-overdue-uuid", "EVT-OVERDUE", "Overdue Catchup Test", ReminderType.EVENT, "GENERAL",
+                now.toLocalDate(), now.toLocalTime(), now.getZone(), ReminderRecurrence.NONE,
+                Collections.emptyMap(), List.of(stage7h, stage6h, stage5h, stage4h), state, Collections.emptyList()
+        );
+        storageManager.saveEvent(event);
+
+        // Dispatch fires at `now`
+        boolean dispatched = dispatchService.dispatch("EVT-OVERDUE");
+        assertThat(dispatched).isTrue();
+
+        ReminderEvent updated = storageManager.findByIdOrUuid("EVT-OVERDUE").orElseThrow();
+        // 7h and 6h were skipped
+        assertThat(updated.stages().get(0).stage()).isEqualTo("7h");
+        assertThat(updated.stages().get(0).status()).isEqualTo(ReminderStageStatus.SKIPPED);
+
+        assertThat(updated.stages().get(1).stage()).isEqualTo("6h");
+        assertThat(updated.stages().get(1).status()).isEqualTo(ReminderStageStatus.SKIPPED);
+
+        // 5h was delivered
+        assertThat(updated.stages().get(2).stage()).isEqualTo("5h");
+        assertThat(updated.stages().get(2).status()).isEqualTo(ReminderStageStatus.DELIVERED);
+
+        // Next pending is 4h
+        assertThat(updated.stages().get(3).stage()).isEqualTo("4h");
+        assertThat(updated.stages().get(3).status()).isEqualTo(ReminderStageStatus.PENDING);
+        assertThat(updated.state().nextStage()).isEqualTo("4h");
+        assertThat(updated.state().lastDispatchedStage()).isEqualTo("5h");
+    }
+
+    @Test
     @DisplayName("Rolls over sub-day recurring event advancing both date and clock (EVERY 16h)")
     void testSubDayRecurrenceRollover() {
         ReminderCreateRequest req = new ReminderCreateRequest(

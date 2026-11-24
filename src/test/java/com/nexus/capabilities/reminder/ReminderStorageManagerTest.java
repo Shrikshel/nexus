@@ -198,4 +198,60 @@ class ReminderStorageManagerTest {
         assertThat(replacedList).hasSize(1);
         assertThat(replacedList.get(0).title()).isEqualTo("Imported Brand New");
     }
+
+    @Test
+    @DisplayName("Auto-skips stages that are already in the past when creating a reminder mid-day")
+    void testPastStagesAutoSkippedOnCreation() {
+        // Event today in 4 hours
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+        java.time.ZonedDateTime target = now.plusHours(4);
+
+        // Stages: 6h before (in the past by 2 hours), 2h before (in the future by 2 hours), 0m (in the future by 4 hours)
+        ReminderCreateRequest req = new ReminderCreateRequest(
+                "EVT-TODAY", "Mid-Day Reminder", ReminderType.EVENT, "WORK",
+                target.toLocalDate(), target.toLocalTime(), target.getZone(),
+                ReminderRecurrence.NONE, List.of("6h", "2h", "0m"), Collections.emptyMap(), Collections.emptyMap()
+        );
+
+        ReminderEvent event = storageManager.createReminder(req);
+        assertThat(event.stages()).hasSize(3);
+
+        // 6h was in the past -> SKIPPED
+        assertThat(event.stages().get(0).stage()).isEqualTo("6h");
+        assertThat(event.stages().get(0).status()).isEqualTo(ReminderStageStatus.SKIPPED);
+
+        // 2h is in the future -> PENDING
+        assertThat(event.stages().get(1).stage()).isEqualTo("2h");
+        assertThat(event.stages().get(1).status()).isEqualTo(ReminderStageStatus.PENDING);
+
+        // 0m is in the future -> PENDING
+        assertThat(event.stages().get(2).stage()).isEqualTo("0m");
+        assertThat(event.stages().get(2).status()).isEqualTo(ReminderStageStatus.PENDING);
+
+        // Initial state locks onto first upcoming stage (2h), not the skipped 6h
+        assertThat(event.state().nextStage()).isEqualTo("2h");
+        assertThat(event.state().nextTriggerAt()).isEqualTo(event.stages().get(1).triggerAt());
+        assertThat(event.state().status()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    @DisplayName("Reconciles past pending stages to SKIPPED")
+    void testReconcileEvent() {
+        java.time.ZonedDateTime now = java.time.ZonedDateTime.now();
+        ReminderStage pastStage = new ReminderStage("7h", "-PT7H", now.minusHours(2).toInstant(), null, null, ReminderStageStatus.PENDING);
+        ReminderStage futureStage = new ReminderStage("1h", "-PT1H", now.plusHours(1).toInstant(), null, null, ReminderStageStatus.PENDING);
+
+        ReminderEventState state = new ReminderEventState("2026", "ACTIVE", null, "7h", pastStage.triggerAt());
+        ReminderEvent event = new ReminderEvent(
+                "reconcile-uuid", "EVT-REC", "Reconcile Test", ReminderType.EVENT, "GENERAL",
+                now.toLocalDate(), now.toLocalTime(), now.getZone(), ReminderRecurrence.NONE,
+                Collections.emptyMap(), List.of(pastStage, futureStage), state, Collections.emptyList()
+        );
+        storageManager.saveEvent(event);
+
+        ReminderEvent reconciled = storageManager.reconcileEvent(event, now.toInstant());
+        assertThat(reconciled.stages().get(0).status()).isEqualTo(ReminderStageStatus.SKIPPED);
+        assertThat(reconciled.stages().get(1).status()).isEqualTo(ReminderStageStatus.PENDING);
+        assertThat(reconciled.state().nextStage()).isEqualTo("1h");
+    }
 }

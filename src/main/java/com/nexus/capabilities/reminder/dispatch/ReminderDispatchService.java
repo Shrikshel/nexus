@@ -55,17 +55,31 @@ public class ReminderDispatchService {
             return true;
         }
 
-        // 1. Find the earliest pending stage to deliver
+        // 1. Find stage to deliver: prioritize latest pending stage whose trigger time has arrived
         Instant now = Instant.now();
+        List<ReminderStage> updatedStages = new ArrayList<>(event.stages());
         ReminderStage stageToDeliver = null;
         int stageIdx = -1;
 
-        for (int i = 0; i < event.stages().size(); i++) {
-            ReminderStage s = event.stages().get(i);
-            if (s.status() == ReminderStageStatus.PENDING) {
-                stageToDeliver = s;
-                stageIdx = i;
-                break;
+        for (int i = 0; i < updatedStages.size(); i++) {
+            ReminderStage s = updatedStages.get(i);
+            if (s.status() == ReminderStageStatus.PENDING && s.triggerAt() != null) {
+                if (!s.triggerAt().isAfter(now.plusSeconds(60))) {
+                    stageToDeliver = s;
+                    stageIdx = i;
+                }
+            }
+        }
+
+        // If no pending stage has arrived yet, fallback to earliest pending stage (e.g. manual dispatch / test)
+        if (stageToDeliver == null) {
+            for (int i = 0; i < updatedStages.size(); i++) {
+                ReminderStage s = updatedStages.get(i);
+                if (s.status() == ReminderStageStatus.PENDING) {
+                    stageToDeliver = s;
+                    stageIdx = i;
+                    break;
+                }
             }
         }
 
@@ -73,6 +87,16 @@ public class ReminderDispatchService {
             log.info("All stages already delivered for reminder {}. Triggering cycle rollover check.", event.id());
             handleCycleRollover(event);
             return true;
+        }
+
+        // Auto-skip any overdue pending stages that were scheduled before stageToDeliver
+        for (int i = 0; i < stageIdx; i++) {
+            ReminderStage s = updatedStages.get(i);
+            if (s.status() == ReminderStageStatus.PENDING) {
+                log.info("Auto-skipping overdue stage '{}' (scheduled at {}) for reminder {}",
+                        s.stage(), s.triggerAt(), event.id());
+                updatedStages.set(i, s.withStatus(ReminderStageStatus.SKIPPED, null));
+            }
         }
 
         // 2. Synthesize message & send notification
@@ -83,7 +107,6 @@ public class ReminderDispatchService {
         }
 
         // 3. Mark stage as DELIVERED
-        List<ReminderStage> updatedStages = new ArrayList<>(event.stages());
         ReminderStage delivered = stageToDeliver.withStatus(ReminderStageStatus.DELIVERED, now);
         updatedStages.set(stageIdx, delivered);
 

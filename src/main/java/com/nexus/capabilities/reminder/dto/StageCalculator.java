@@ -63,6 +63,24 @@ public final class StageCalculator {
     }
 
     /**
+     * Inspects built stages and marks any past pending stages whose trigger timestamp
+     * has already passed as SKIPPED.
+     */
+    public static List<ReminderStage> filterPastStages(List<ReminderStage> stages, Instant now) {
+        if (stages == null) return Collections.emptyList();
+        Instant threshold = now != null ? now.minusSeconds(30) : Instant.now().minusSeconds(30);
+        List<ReminderStage> result = new ArrayList<>();
+        for (ReminderStage s : stages) {
+            if (s.status() == ReminderStageStatus.PENDING && s.triggerAt() != null && s.triggerAt().isBefore(threshold)) {
+                result.add(s.withStatus(ReminderStageStatus.SKIPPED, null));
+            } else {
+                result.add(s);
+            }
+        }
+        return result;
+    }
+
+    /**
      * Parses tokens like "7d", "3d", "12h", "15m", "0m" into a positive Duration offset.
      */
     public static Duration parseDuration(String token) {

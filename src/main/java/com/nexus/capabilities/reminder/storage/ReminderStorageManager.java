@@ -180,9 +180,10 @@ public class ReminderStorageManager {
                 }
             }
 
-            List<ReminderStage> stages = StageCalculator.buildStages(
+            List<ReminderStage> rawStages = StageCalculator.buildStages(
                     stageTokens, req.targetDate(), req.targetTime(), zone, req.customStageMessages()
             );
+            List<ReminderStage> stages = StageCalculator.filterPastStages(rawStages, Instant.now());
 
             // 6. Initial State & Cycle
             String cycle;
@@ -193,9 +194,16 @@ public class ReminderStorageManager {
             } else {
                 cycle = String.valueOf(req.targetDate().getYear());
             }
-            String initialNextStage = stages.isEmpty() ? null : stages.get(0).stage();
-            Instant initialNextTrigger = stages.isEmpty() ? null : stages.get(0).triggerAt();
-            ReminderEventState state = ReminderEventState.initial(cycle, initialNextStage, initialNextTrigger);
+
+            ReminderStage firstUpcoming = stages.stream()
+                    .filter(s -> s.status() == ReminderStageStatus.PENDING)
+                    .findFirst()
+                    .orElse(null);
+
+            String initialNextStage = firstUpcoming != null ? firstUpcoming.stage() : null;
+            Instant initialNextTrigger = firstUpcoming != null ? firstUpcoming.triggerAt() : null;
+            String status = (firstUpcoming == null && recurrence.isNone()) ? "COMPLETED" : "ACTIVE";
+            ReminderEventState state = new ReminderEventState(cycle, status, null, initialNextStage, initialNextTrigger);
 
             ReminderEvent newEvent = new ReminderEvent(
                     uuid,
@@ -267,7 +275,8 @@ public class ReminderStorageManager {
                 if (req.updateStageMessages() != null) {
                     customMsgs.putAll(req.updateStageMessages());
                 }
-                updatedStages = StageCalculator.buildStages(tokens, date, time, zone, customMsgs);
+                List<ReminderStage> raw = StageCalculator.buildStages(tokens, date, time, zone, customMsgs);
+                updatedStages = StageCalculator.filterPastStages(raw, Instant.now());
             } else if (req.updateStageMessages() != null) {
                 updatedStages = new ArrayList<>();
                 for (ReminderStage s : existing.stages()) {
@@ -284,9 +293,10 @@ public class ReminderStorageManager {
                     .findFirst()
                     .orElse(null);
 
+            String status = (nextPending == null && recurrence.isNone()) ? "COMPLETED" : "ACTIVE";
             ReminderEventState newState = new ReminderEventState(
                     String.valueOf(date.getYear()),
-                    "ACTIVE",
+                    status,
                     existing.state().lastDispatchedStage(),
                     nextPending != null ? nextPending.stage() : null,
                     nextPending != null ? nextPending.triggerAt() : null
@@ -336,6 +346,39 @@ public class ReminderStorageManager {
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    public ReminderEvent reconcileEvent(ReminderEvent event, Instant now) {
+        if (event == null || !"ACTIVE".equalsIgnoreCase(event.state().status())) {
+            return event;
+        }
+        List<ReminderStage> filtered = StageCalculator.filterPastStages(event.stages(), now);
+        boolean changed = false;
+        for (int i = 0; i < filtered.size(); i++) {
+            if (filtered.get(i).status() != event.stages().get(i).status()) {
+                changed = true;
+                break;
+            }
+        }
+        if (!changed) {
+            return event;
+        }
+        ReminderStage nextPending = filtered.stream()
+                .filter(s -> s.status() == ReminderStageStatus.PENDING)
+                .findFirst()
+                .orElse(null);
+
+        String status = (nextPending == null && event.recurrence().isNone()) ? "COMPLETED" : "ACTIVE";
+        ReminderEventState newState = new ReminderEventState(
+                event.state().activeCycle(),
+                status,
+                event.state().lastDispatchedStage(),
+                nextPending != null ? nextPending.stage() : null,
+                nextPending != null ? nextPending.triggerAt() : null
+        );
+        ReminderEvent reconciled = event.withUpdatedState(newState, filtered);
+        saveEvent(reconciled);
+        return reconciled;
     }
 
     public boolean deleteByIdOrUuid(String identifier) {

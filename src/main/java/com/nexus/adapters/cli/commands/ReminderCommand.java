@@ -710,9 +710,11 @@ public class ReminderCommand implements Callable<Integer> {
 
             List<ReminderEvent> all = parent.getStorageManager().loadAll();
             int armed = 0;
+            Instant now = Instant.now();
             for (ReminderEvent e : all) {
                 if ("ACTIVE".equalsIgnoreCase(e.state().status())) {
-                    parent.getSchedulerProvider().armTimer(e);
+                    ReminderEvent reconciled = parent.getStorageManager().reconcileEvent(e, now);
+                    parent.getSchedulerProvider().armTimer(reconciled);
                     armed++;
                 } else {
                     parent.getSchedulerProvider().disarmTimer(e.id());
