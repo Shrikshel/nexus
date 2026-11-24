@@ -12,7 +12,7 @@
 
     <groupId>com.nexus</groupId>
     <artifactId>nexus</artifactId>
-    <version>0.0.15-SNAPSHOT</version>
+    <version>0.0.16-SNAPSHOT</version>
     <name>Nexus Host Management Agent</name>
     <description>Lightweight, Cross-Platform Host Management Agent</description>
 
