@@ -1,6 +1,7 @@
 package com.nexus.adapters.cli.commands;
 
 import com.nexus.adapters.cli.NexusCliRootCommand;
+import com.nexus.platform.logging.LogColorizer;
 import com.nexus.platform.logging.NexusLogManager;
 import com.nexus.platform.logging.NexusLogManager.LogFileInfo;
 import org.springframework.stereotype.Component;
@@ -66,6 +67,18 @@ public class LogsCommand implements Callable<Integer> {
     @Option(names = {"--raw"}, description = "Output raw log lines without decorative banners")
     private boolean raw;
 
+    @Option(names = {"--system"}, description = "Target system daemon logs (/root/.nexus/logs/)")
+    private boolean systemScope;
+
+    @Option(names = {"--user"}, description = "Target local user logs (~/.nexus/logs/)")
+    private boolean userScope;
+
+    @Option(names = {"--color"}, description = "Force ANSI color formatting (default: auto)")
+    private boolean color;
+
+    @Option(names = {"--no-color"}, description = "Disable ANSI color formatting")
+    private boolean noColor;
+
     public LogsCommand() {}
 
     public LogsCommand(NexusCliRootCommand root) {
@@ -101,7 +114,10 @@ public class LogsCommand implements Callable<Integer> {
         }
 
         // 4. View / Follow logs
-        Path targetLog = audit ? NexusLogManager.getAuditLogFile() : NexusLogManager.getAppLogFile();
+        Path targetLog = resolveTargetLog(err);
+        if (targetLog == null) {
+            return 1;
+        }
         String logLabel = audit ? "Audit Trail" : "Application Logs";
 
         if (!Files.exists(targetLog)) {
@@ -115,14 +131,69 @@ public class LogsCommand implements Callable<Integer> {
             return 0;
         }
 
+        boolean useColor = isColorEnabled();
         if (follow) {
-            return executeFollow(targetLog, logLabel, out);
+            return executeFollow(targetLog, logLabel, out, useColor);
         } else {
-            return executeTail(targetLog, logLabel, out, json);
+            return executeTail(targetLog, logLabel, out, json, useColor);
         }
     }
 
-    private int executeTail(Path targetLog, String logLabel, PrintWriter out, boolean json) {
+    private Path resolveTargetLog(PrintWriter err) {
+        String logName = audit ? NexusLogManager.AUDIT_LOG_NAME : NexusLogManager.APP_LOG_NAME;
+        Path systemLog = Path.of("/root/.nexus/logs", logName);
+        Path userLog = NexusLogManager.getLogDirectory().resolve(logName);
+
+        if (systemScope || "root".equalsIgnoreCase(System.getProperty("user.name"))) {
+            return systemLog;
+        }
+
+        if (userScope) {
+            return userLog;
+        }
+
+        // Default: if running as regular user, check if system daemon log is readable or active
+        if (Files.isReadable(systemLog)) {
+            return systemLog;
+        }
+
+        if (Files.exists(Path.of("/etc/systemd/system/nexus.service")) && (!Files.exists(userLog) || getFileSize(userLog) == 0)) {
+            if (!Files.isReadable(systemLog)) {
+                err.println("\u001B[33mℹ The active Nexus daemon runs as a root system service.\u001B[0m");
+                err.println("  Reading system daemon logs requires root privileges:");
+                err.println("  👉 Run with sudo: sudo nexus logs" + (follow ? " -f" : ""));
+                return null;
+            }
+        }
+
+        return userLog;
+    }
+
+    private static long getFileSize(Path p) {
+        try {
+            return Files.size(p);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private boolean isColorEnabled() {
+        if (noColor || raw || (root != null && root.isJson())) {
+            return false;
+        }
+        if (color) {
+            return true;
+        }
+        if (System.getenv("NO_COLOR") != null) {
+            return false;
+        }
+        if (spec != null && spec.commandLine() != null) {
+            return spec.commandLine().getColorScheme().ansi().enabled();
+        }
+        return System.console() != null;
+    }
+
+    private int executeTail(Path targetLog, String logLabel, PrintWriter out, boolean json, boolean useColor) {
         List<String> recent = NexusLogManager.readRecentLines(targetLog, lines);
 
         if (json) {
@@ -138,15 +209,16 @@ public class LogsCommand implements Callable<Integer> {
         }
 
         if (!raw) {
-            out.println("=== " + logLabel + " (" + targetLog.getFileName() + ") ===");
+            out.println("\u001B[1;36m=== " + logLabel + " (" + targetLog.getFileName() + ") ===\u001B[0m");
             out.println("  Location : " + targetLog);
             out.println("  Displaying last " + recent.size() + " lines (use -f to follow, -n <count> for more):");
             out.println("--------------------------------------------------------------------------------");
         }
 
         for (String line : recent) {
-            out.println(line);
+            out.println(useColor ? LogColorizer.colorize(line) : line);
         }
+        out.flush();
 
         if (!raw && recent.isEmpty()) {
             out.println("  (log file is currently empty)");
@@ -154,16 +226,20 @@ public class LogsCommand implements Callable<Integer> {
         return 0;
     }
 
-    private int executeFollow(Path targetLog, String logLabel, PrintWriter out) {
-        out.println("=== Streaming " + logLabel + " (" + targetLog + ") ===");
-        out.println("  Press Ctrl+C to exit streaming.");
-        out.println("--------------------------------------------------------------------------------");
+    private int executeFollow(Path targetLog, String logLabel, PrintWriter out, boolean useColor) {
+        if (!raw) {
+            out.println("\u001B[1;36m=== Streaming " + logLabel + " (" + targetLog.getFileName() + ") ===\u001B[0m");
+            out.println("  Location : " + targetLog);
+            out.println("  Press Ctrl+C to exit streaming.");
+            out.println("--------------------------------------------------------------------------------");
+        }
 
         // Print initial recent lines
-        List<String> initialLines = NexusLogManager.readRecentLines(targetLog, Math.min(lines, 20));
+        List<String> initialLines = NexusLogManager.readRecentLines(targetLog, Math.min(lines, 30));
         for (String line : initialLines) {
-            out.println(line);
+            out.println(useColor ? LogColorizer.colorize(line) : line);
         }
+        out.flush();
 
         try (RandomAccessFile raf = new RandomAccessFile(targetLog.toFile(), "r")) {
             long pos = targetLog.toFile().length();
@@ -173,18 +249,20 @@ public class LogsCommand implements Callable<Integer> {
                 long len = targetLog.toFile().length();
                 if (len < pos) {
                     // File was rotated or truncated (flush)
-                    out.println("\n[NOTICE: Log file rotated or truncated - resuming from start]");
+                    out.println("\u001B[33m\n[NOTICE: Log file rotated or truncated - resuming from start]\u001B[0m");
                     pos = 0;
                     raf.seek(0);
                 } else if (len > pos) {
                     raf.seek(pos);
                     String line;
                     while ((line = raf.readLine()) != null) {
-                        out.println(new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8));
+                        String decoded = new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
+                        out.println(useColor ? LogColorizer.colorize(decoded) : decoded);
                     }
                     pos = raf.getFilePointer();
+                    out.flush();
                 }
-                Thread.sleep(250);
+                Thread.sleep(150);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

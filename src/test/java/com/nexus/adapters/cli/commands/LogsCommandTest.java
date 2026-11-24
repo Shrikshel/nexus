@@ -131,4 +131,35 @@ class LogsCommandTest {
         assertThat(Files.size(appLog)).isEqualTo(0);
         assertThat(Files.size(auditLog)).isEqualTo(0);
     }
+
+    @Test
+    @DisplayName("Colorizes output when --color flag is provided")
+    void testLogsWithColorFlag() throws IOException {
+        Path appLog = tempLogsDir.resolve("nexus.log");
+        Files.writeString(appLog, "2026-11-24 07:15:52.152 [main] ERROR c.n.Main - Failure\n");
+
+        StringWriter sw = new StringWriter();
+        CommandLine cmd = createLogsCommandLine(sw);
+
+        int exitCode = cmd.execute("--color");
+        assertThat(exitCode).isEqualTo(0);
+        String output = sw.toString();
+        assertThat(output).contains(com.nexus.platform.logging.LogColorizer.LEVEL_ERROR);
+    }
+
+    @Test
+    @DisplayName("Disables color when --no-color flag is provided")
+    void testLogsWithNoColorFlag() throws IOException {
+        Path appLog = tempLogsDir.resolve("nexus.log");
+        Files.writeString(appLog, "2026-11-24 07:15:52.152 [main] ERROR c.n.Main - Failure\n");
+
+        StringWriter sw = new StringWriter();
+        CommandLine cmd = createLogsCommandLine(sw);
+
+        int exitCode = cmd.execute("--no-color");
+        assertThat(exitCode).isEqualTo(0);
+        String output = sw.toString();
+        assertThat(output).doesNotContain(com.nexus.platform.logging.LogColorizer.LEVEL_ERROR);
+        assertThat(output).contains("ERROR");
+    }
 }

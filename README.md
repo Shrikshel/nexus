@@ -308,17 +308,28 @@ sudo nexus daemon uninstall
 ```
 
 #### 3. PM2-Style Synchronized Log Management (`nexus logs` / `nx logs`)
-Nexus centralizes all application telemetry and audit logs into a single canonical directory (`~/.nexus/logs/` for user scope or `/var/log/nexus/` for system scope). It features PM2-style automatic log rotation (10MB chunks, gzip `.gz` compression, 14-day retention, and 500MB total size cap):
+Nexus centralizes all application telemetry and audit logs into a single canonical directory (`~/.nexus/logs/` for user scope or `/root/.nexus/logs/` for system scope). It features PM2-style automatic log rotation (10MB chunks, gzip `.gz` compression, 14-day retention, and 500MB total size cap), real-time dynamic ANSI colorization (dark gray timestamps, magenta threads, colored level badges, highlighted keywords), and live streaming:
 
 ```bash
-# View last 30 lines of application logs (default)
+# View last 30 lines of application logs with live ANSI colorization (default)
 nexus logs
+sudo nexus logs                         # Target system daemon logs
+
+# Stream and follow live log updates in real-time with live colors (like 'tail -f' or 'pm2 logs')
+nexus logs -f
+sudo nexus logs -f                      # Follow root system daemon logs
 
 # View custom line count
 nexus logs -n 50
 
-# Stream and follow live log updates in real-time (like 'tail -f' or 'pm2 logs')
-nexus logs -f
+# Target specific scopes explicitly
+nexus logs --system                     # System daemon logs (/root/.nexus/logs/)
+nexus logs --user                       # User logs (~/.nexus/logs/)
+
+# Color control (auto-detected on interactive terminals; disabled when piped)
+nexus logs --color                      # Force enable colors
+nexus logs --no-color                   # Plain text without ANSI escape codes
+nexus logs --raw                        # Raw log lines without headers
 
 # Inspect the tamper-evident audit trail log
 nexus logs --audit
