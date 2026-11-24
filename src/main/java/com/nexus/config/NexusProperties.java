@@ -20,6 +20,15 @@ public class NexusProperties {
     private String logLevel = "INFO";
 
     private TelegramConfig telegram = new TelegramConfig();
+    private BackupConfig backup = new BackupConfig();
+
+    public BackupConfig getBackup() {
+        return backup;
+    }
+
+    public void setBackup(BackupConfig backup) {
+        this.backup = backup;
+    }
 
     public boolean isVerbose() {
         return verbose;
@@ -128,6 +137,27 @@ public class NexusProperties {
                 }
             }
             return new java.util.ArrayList<>(set);
+        }
+    }
+
+    public static class BackupConfig {
+        private String password;
+        private String directory;
+
+        public String getPassword() {
+            return password;
+        }
+
+        public void setPassword(String password) {
+            this.password = password;
+        }
+
+        public String getDirectory() {
+            return directory;
+        }
+
+        public void setDirectory(String directory) {
+            this.directory = directory;
         }
     }
 }

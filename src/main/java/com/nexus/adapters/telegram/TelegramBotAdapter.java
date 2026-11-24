@@ -19,6 +19,10 @@ import com.nexus.core.capability.ExecutionEngine;
 import com.nexus.core.capability.InvocationSource;
 import com.nexus.core.security.Role;
 import com.nexus.core.security.Subject;
+import com.nexus.platform.backup.BackupCryptoService;
+import com.nexus.platform.backup.BackupManager;
+import com.nexus.platform.backup.dto.BackupRequest;
+import com.nexus.platform.backup.dto.BackupResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +30,8 @@ import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -51,6 +57,8 @@ public class TelegramBotAdapter implements SmartLifecycle {
     private final ReminderStorageManager reminderStorageManager;
     private final ReminderSchedulerProvider reminderSchedulerProvider;
     private final ReminderDispatchService reminderDispatchService;
+    private final BackupManager backupManager;
+    private final BackupCryptoService backupCryptoService;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ExecutorService pollerExecutor;
@@ -65,7 +73,9 @@ public class TelegramBotAdapter implements SmartLifecycle {
             ExecutionEngine executionEngine,
             @Autowired(required = false) ReminderStorageManager reminderStorageManager,
             @Autowired(required = false) ReminderSchedulerProvider reminderSchedulerProvider,
-            @Autowired(required = false) ReminderDispatchService reminderDispatchService) {
+            @Autowired(required = false) ReminderDispatchService reminderDispatchService,
+            @Autowired(required = false) BackupManager backupManager,
+            @Autowired(required = false) BackupCryptoService backupCryptoService) {
         this.properties = properties;
         this.client = client;
         this.securityFilter = securityFilter;
@@ -74,6 +84,20 @@ public class TelegramBotAdapter implements SmartLifecycle {
         this.reminderStorageManager = reminderStorageManager;
         this.reminderSchedulerProvider = reminderSchedulerProvider;
         this.reminderDispatchService = reminderDispatchService;
+        this.backupManager = backupManager;
+        this.backupCryptoService = backupCryptoService;
+    }
+
+    public TelegramBotAdapter(
+            NexusProperties properties,
+            TelegramClient client,
+            TelegramSecurityFilter securityFilter,
+            TelegramFormatter formatter,
+            ExecutionEngine executionEngine,
+            ReminderStorageManager reminderStorageManager,
+            ReminderSchedulerProvider reminderSchedulerProvider,
+            ReminderDispatchService reminderDispatchService) {
+        this(properties, client, securityFilter, formatter, executionEngine, reminderStorageManager, reminderSchedulerProvider, reminderDispatchService, null, null);
     }
 
     public TelegramBotAdapter(
@@ -83,7 +107,7 @@ public class TelegramBotAdapter implements SmartLifecycle {
             TelegramFormatter formatter,
             ExecutionEngine executionEngine,
             ReminderStorageManager reminderStorageManager) {
-        this(properties, client, securityFilter, formatter, executionEngine, reminderStorageManager, null, null);
+        this(properties, client, securityFilter, formatter, executionEngine, reminderStorageManager, null, null, null, null);
     }
 
     public TelegramBotAdapter(
@@ -92,7 +116,7 @@ public class TelegramBotAdapter implements SmartLifecycle {
             TelegramSecurityFilter securityFilter,
             TelegramFormatter formatter,
             ExecutionEngine executionEngine) {
-        this(properties, client, securityFilter, formatter, executionEngine, null, null, null);
+        this(properties, client, securityFilter, formatter, executionEngine, null, null, null, null, null);
     }
 
     @Override
@@ -372,6 +396,10 @@ public class TelegramBotAdapter implements SmartLifecycle {
             case "/reminders_list":
             case "/reminder_list":
                 sendReminderList(chatId, botToken, false);
+                break;
+
+            case "/backup":
+                handleBackupCommand(text, chatId, botToken);
                 break;
 
             default:
@@ -699,9 +727,94 @@ public class TelegramBotAdapter implements SmartLifecycle {
                 "• /reboot - Reboot host system (requires <code>/reboot confirm</code>)\n" +
                 "• /poweroff - Shut down host system (requires <code>/poweroff confirm</code>)\n\n" +
                 "<b>Agent & Configuration:</b>\n" +
+                "• /backup [password] - Export encrypted full host backup & download via Telegram\n" +
                 "• /reload - Reload agent configuration from disk\n" +
                 "• /caps - List registered agent capabilities\n" +
                 "• /help - Display this command overview\n";
         client.sendMessage(botToken, chatId, helpHtml);
+    }
+
+    private void handleBackupCommand(String text, long chatId, String botToken) {
+        if (backupManager == null) {
+            client.sendMessage(botToken, chatId, "⚠️ <i>Backup subsystem is unavailable.</i>");
+            return;
+        }
+
+        String[] parts = text.trim().split("\\s+");
+        String password = null;
+        if (parts.length > 1 && !parts[1].isBlank()) {
+            password = parts[1].trim();
+        } else if (properties.getBackup() != null && properties.getBackup().getPassword() != null && !properties.getBackup().getPassword().isBlank()) {
+            password = properties.getBackup().getPassword();
+        } else if (backupCryptoService != null) {
+            password = backupCryptoService.generateSecurePassword(16);
+        } else {
+            password = "Nexus" + System.currentTimeMillis();
+        }
+
+        client.sendMessage(botToken, chatId, "⏳ <i>Generating encrypted full host backup archive...</i>");
+
+        Path tempBackup = null;
+        try {
+            tempBackup = Files.createTempFile("nexus-backup-telegram-", ".zip.enc");
+            BackupRequest request = BackupRequest.builder()
+                    .outputPath(tempBackup)
+                    .encrypt(true)
+                    .password(password.toCharArray())
+                    .includeSystem(true)
+                    .includeUser(true)
+                    .overwrite(true)
+                    .build();
+
+            BackupResult result = backupManager.createBackup(request);
+            if (!result.success()) {
+                client.sendMessage(botToken, chatId, "❌ <b>Backup Failed:</b> " + result.message());
+                return;
+            }
+
+            int remindersCount = 0;
+            int timersCount = 0;
+            if (result.manifest() != null && result.manifest().stats() != null) {
+                var stats = result.manifest().stats();
+                remindersCount = ((Number) stats.getOrDefault("systemReminders", 0)).intValue() +
+                        ((Number) stats.getOrDefault("userReminders", 0)).intValue();
+                timersCount = ((Number) stats.getOrDefault("systemTimers", 0)).intValue() +
+                        ((Number) stats.getOrDefault("userTimers", 0)).intValue();
+            }
+
+            String caption = "📦 <b>Nexus Full Host Backup</b>\n\n" +
+                    "• <b>Archive:</b> <code>" + result.archivePath().getFileName() + "</code>\n" +
+                    "• <b>Size:</b> " + BackupResult.formatSize(result.archiveSizeBytes()) + "\n" +
+                    "• <b>Encryption:</b> AES-256-GCM\n" +
+                    "• <b>Files Backed Up:</b> " + result.totalFiles() + " (" +
+                    remindersCount + " reminders, " +
+                    timersCount + " timers)\n" +
+                    "• <b>Decryption Key:</b> <code>" + password + "</code>\n\n" +
+                    "<i>Restore Instructions:</i>\n" +
+                    "<code>nexus backup inspect " + result.archivePath().getFileName() + " -p " + password + "</code>\n" +
+                    "<code>sudo nexus backup restore " + result.archivePath().getFileName() + " -p " + password + " --dry-run</code>";
+
+            TelegramClient.TelegramSendResponse sendResp = client.sendDocument(
+                    botToken,
+                    String.valueOf(chatId),
+                    result.archivePath(),
+                    caption,
+                    "HTML",
+                    false
+            );
+
+            if (!sendResp.success()) {
+                client.sendMessage(botToken, chatId, "❌ <b>Backup Upload Failed:</b> " + sendResp.error());
+            }
+        } catch (Exception e) {
+            log.error("Failed to generate or upload Telegram backup", e);
+            client.sendMessage(botToken, chatId, "❌ <b>Backup Generation Failed:</b> " + e.getMessage());
+        } finally {
+            if (tempBackup != null) {
+                try {
+                    Files.deleteIfExists(tempBackup);
+                } catch (IOException ignored) {}
+            }
+        }
     }
 }

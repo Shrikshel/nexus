@@ -276,6 +276,23 @@ public final class NexusConfigResolver {
                 }
             }
 
+            Object backupObj = nexusMap.get("backup");
+            if (backupObj instanceof Map<?, ?> backupMap) {
+                NexusProperties.BackupConfig bkp = properties.getBackup();
+                if (bkp == null) {
+                    bkp = new NexusProperties.BackupConfig();
+                    properties.setBackup(bkp);
+                }
+                if (backupMap.containsKey("password")) {
+                    Object p = backupMap.get("password");
+                    bkp.setPassword(p != null ? String.valueOf(p) : null);
+                }
+                if (backupMap.containsKey("directory") || backupMap.containsKey("dir")) {
+                    Object d = backupMap.containsKey("directory") ? backupMap.get("directory") : backupMap.get("dir");
+                    bkp.setDirectory(d != null ? String.valueOf(d).trim() : null);
+                }
+            }
+
             System.setProperty(PROPERTY_CONFIG_FILE, configFile.getAbsolutePath());
             return true;
         } catch (Exception e) {

@@ -34,6 +34,8 @@ class TelegramBotAdapterTest {
     private ReminderStorageManager reminderStorageManager;
     private com.nexus.capabilities.reminder.scheduler.ReminderSchedulerProvider reminderSchedulerProvider;
     private com.nexus.capabilities.reminder.dispatch.ReminderDispatchService reminderDispatchService;
+    private com.nexus.platform.backup.BackupManager backupManager;
+    private com.nexus.platform.backup.BackupCryptoService backupCryptoService;
     private TelegramBotAdapter adapter;
     private ObjectMapper objectMapper;
 
@@ -52,9 +54,15 @@ class TelegramBotAdapterTest {
         reminderStorageManager = mock(ReminderStorageManager.class);
         reminderSchedulerProvider = mock(com.nexus.capabilities.reminder.scheduler.ReminderSchedulerProvider.class);
         reminderDispatchService = mock(com.nexus.capabilities.reminder.dispatch.ReminderDispatchService.class);
+        backupManager = mock(com.nexus.platform.backup.BackupManager.class);
+        backupCryptoService = mock(com.nexus.platform.backup.BackupCryptoService.class);
         objectMapper = new ObjectMapper();
 
-        adapter = new TelegramBotAdapter(properties, client, securityFilter, formatter, executionEngine, reminderStorageManager, reminderSchedulerProvider, reminderDispatchService);
+        adapter = new TelegramBotAdapter(
+                properties, client, securityFilter, formatter, executionEngine,
+                reminderStorageManager, reminderSchedulerProvider, reminderDispatchService,
+                backupManager, backupCryptoService
+        );
     }
 
     private ObjectNode createUpdateJson(long updateId, long chatId, long senderId, String text) {
@@ -415,5 +423,73 @@ class TelegramBotAdapterTest {
         assertThat(replyCaptor.getValue()).contains("Nexus Scheduled Reminders Management");
         assertThat(replyCaptor.getValue()).contains("/reminders next");
         assertThat(replyCaptor.getValue()).contains("/reminders delete");
+    }
+
+    @Test
+    @DisplayName("Routes /backup with custom password and delivers document attachment")
+    void testBackupCommandCustomPassword() {
+        com.nexus.platform.backup.dto.BackupManifest manifest = new com.nexus.platform.backup.dto.BackupManifest(
+                1, Instant.now(), "srv-nexus", "Linux", "0.0.22", true,
+                List.of("SYSTEM", "USER"),
+                java.util.Map.of("systemReminders", 2, "userReminders", 1, "systemTimers", 3, "userTimers", 0),
+                List.of()
+        );
+        java.nio.file.Path mockArchive = java.nio.file.Path.of("/tmp/nexus-backup-mock.zip.enc");
+        com.nexus.platform.backup.dto.BackupResult result = new com.nexus.platform.backup.dto.BackupResult(
+                true, mockArchive, 2048, 5, true, manifest, "Success"
+        );
+
+        when(backupManager.createBackup(any())).thenReturn(result);
+        when(client.sendDocument(anyString(), anyString(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new TelegramClient.TelegramSendResponse(true, 555L, null));
+
+        ObjectNode update = createUpdateJson(21, 999L, 100L, "/backup CustomPass123");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        ArgumentCaptor<com.nexus.platform.backup.dto.BackupRequest> requestCaptor =
+                ArgumentCaptor.forClass(com.nexus.platform.backup.dto.BackupRequest.class);
+        verify(backupManager).createBackup(requestCaptor.capture());
+        assertThat(new String(requestCaptor.getValue().password())).isEqualTo("CustomPass123");
+        assertThat(requestCaptor.getValue().encrypt()).isTrue();
+
+        ArgumentCaptor<String> captionCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendDocument(eq("mock-token-123"), eq("999"), any(), captionCaptor.capture(), eq("HTML"), eq(false));
+        assertThat(captionCaptor.getValue()).contains("Nexus Full Host Backup");
+        assertThat(captionCaptor.getValue()).contains("CustomPass123");
+        assertThat(captionCaptor.getValue()).contains("AES-256-GCM");
+    }
+
+    @Test
+    @DisplayName("Routes /backup without args and generates secure random password")
+    void testBackupCommandGeneratedPassword() {
+        when(backupCryptoService.generateSecurePassword(16)).thenReturn("GenPassSecure99");
+
+        com.nexus.platform.backup.dto.BackupManifest manifest = new com.nexus.platform.backup.dto.BackupManifest(
+                1, Instant.now(), "srv-nexus", "Linux", "0.0.22", true,
+                List.of("USER"),
+                java.util.Map.of("systemReminders", 0, "userReminders", 1, "systemTimers", 0, "userTimers", 0),
+                List.of()
+        );
+        java.nio.file.Path mockArchive = java.nio.file.Path.of("/tmp/nexus-backup-mock.zip.enc");
+        com.nexus.platform.backup.dto.BackupResult result = new com.nexus.platform.backup.dto.BackupResult(
+                true, mockArchive, 1024, 2, true, manifest, "Success"
+        );
+
+        when(backupManager.createBackup(any())).thenReturn(result);
+        when(client.sendDocument(anyString(), anyString(), any(), anyString(), anyString(), anyBoolean()))
+                .thenReturn(new TelegramClient.TelegramSendResponse(true, 556L, null));
+
+        ObjectNode update = createUpdateJson(22, 999L, 100L, "/backup");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        verify(backupCryptoService).generateSecurePassword(16);
+        ArgumentCaptor<com.nexus.platform.backup.dto.BackupRequest> requestCaptor =
+                ArgumentCaptor.forClass(com.nexus.platform.backup.dto.BackupRequest.class);
+        verify(backupManager).createBackup(requestCaptor.capture());
+        assertThat(new String(requestCaptor.getValue().password())).isEqualTo("GenPassSecure99");
+
+        ArgumentCaptor<String> captionCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendDocument(eq("mock-token-123"), eq("999"), any(), captionCaptor.capture(), eq("HTML"), eq(false));
+        assertThat(captionCaptor.getValue()).contains("GenPassSecure99");
     }
 }

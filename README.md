@@ -592,23 +592,6 @@ nexus telegram send "Deployment started" -r 123456789 -r @devops_broadcast
 nexus --json telegram send "Automated ping"
 ```
 
-#### 10. Capabilities Introspection & Updates
-```bash
-# Introspect all registered capabilities and their RBAC permissions
-./nexus capabilities list
-./nexus capabilities describe sys.info
-./nexus capabilities describe net.tailscale.up
-./nexus capabilities describe zfs.pool.status
-./nexus capabilities describe telegram.send
-
-# Check for new GitHub Releases
-nexus update --check
-
-# Apply latest update in-place (or uninstall)
-sudo nexus update
-sudo nexus uninstall -y --all
-```
-
 #### 10. Shell Auto-Completion (`nexus completion`)
 Nexus can generate native shell auto-completion scripts for **Bash**, **Zsh**, and **Fish**, providing seamless tab-completion for all subcommands, nested subcommands, options, and aliases (supporting both `nexus` and `nx`):
 
@@ -646,6 +629,68 @@ nexus completion fish | source
 mkdir -p ~/.config/fish/completions
 nexus completion fish > ~/.config/fish/completions/nexus.fish
 ln -sf ~/.config/fish/completions/nexus.fish ~/.config/fish/completions/nx.fish
+```
+
+#### 11. Full Host Backup, AES-256-GCM Encryption & Disaster Recovery (`nexus backup` / `nx backup`)
+Nexus features a robust, zero-dependency backup and disaster recovery subsystem designed to safeguard your entire host setup. It packages system configuration (`/etc/nexus/config.yml`), system and user reminders (`data/reminders.json`), recurring timer states (`state/timers.json`), and executable automation scripts (`scripts/`) into portable, authenticated archives:
+
+- **Military-Grade AES-256-GCM Encryption**: Uses PBKDF2WithHmacSHA256 key derivation (65,536 iterations, 16-byte random salt, 12-byte random IV) and 128-bit authentication tag with standard magic header `NEXUS_ENC_V1` to protect sensitive configuration, Telegram bot tokens, and custom scripts.
+- **Dynamic Password Resolution**: Passwords can be supplied at runtime (`-p / --password`), via environment variable (`NEXUS_BACKUP_PASSWORD`), in configuration (`nexus.backup.password`), or interactively prompted via masked terminal console.
+- **Embedded Manifest & Integrity Checksums**: Every archive contains `manifest.json` detailing host origin, OS, timestamp, scopes, record counts, and individual SHA-256 integrity checksums for every packaged file.
+- **In-Memory Manifest Inspection**: `nexus backup inspect` validates password authentication and introspects archive contents, statistics, and file inventories completely in-memory without extracting files to disk.
+- **Safe Dry-Run Restores**: Simulate full restorations before committing changes. Shows exact action plan (`WOULD_RESTORE`, `WOULD_OVERWRITE`, `SKIPPED_EXISTS`).
+- **Automated Timer & Reminder Re-Arming**: Restoring with `--rearm` / `--sync` automatically reconciles all systemd timer units and reminders, reloading daemon units seamlessly.
+- **Strict Privilege Boundaries**: Unprivileged users can create, inspect, and restore user-scoped data (`--user`); system-wide restoration (`--system`) strictly requires root (`sudo`).
+
+```bash
+# 1. CREATE FULL BACKUP ARCHIVES (alias: 'export')
+# Create unencrypted ZIP archive of system and user data
+nexus backup create
+nexus backup create -o /tmp/nexus-backup.zip -f
+
+# Create AES-256-GCM encrypted backup archive with runtime password
+nexus backup create -e -p "MySuperSecretKey2026!" -o /tmp/nexus-backup.zip.enc
+
+# Create encrypted backup using NEXUS_BACKUP_PASSWORD environment variable
+export NEXUS_BACKUP_PASSWORD="AutomatedProductionBackupPassword"
+nexus backup create -e -o /backups/nexus-nightly.zip.enc
+
+# Backup user scope only (~/.nexus) without requiring root privileges
+nexus backup create --user -o ~/nexus-user-backup.zip
+
+# 2. INSPECT ARCHIVES WITHOUT EXTRACTION (aliases: 'info', 'show')
+# Inspect plain archive metadata, statistics, and file inventory
+nexus backup inspect /tmp/nexus-backup.zip
+
+# Inspect AES-256-GCM encrypted archive (prompts for password if omitted)
+nexus backup inspect /tmp/nexus-backup.zip.enc -p "MySuperSecretKey2026!"
+
+# 3. RESTORE & DISASTER RECOVERY (alias: 'import')
+# Dry-run preview: simulate restore to view action plan without writing to disk
+nexus backup restore /tmp/nexus-backup.zip.enc -p "MySuperSecretKey2026!" --dry-run
+
+# Full restore: overwrite existing files, restore permissions, and re-arm systemd timers
+sudo nexus backup restore /tmp/nexus-backup.zip.enc -p "MySuperSecretKey2026!" -y --rearm
+
+# Restore user-scoped timers and scripts unprivileged
+nexus backup restore ~/nexus-user-backup.zip --user -y
+```
+
+#### 12. Capabilities Introspection & Updates
+```bash
+# Introspect all registered capabilities and their RBAC permissions
+./nexus capabilities list
+./nexus capabilities describe sys.info
+./nexus capabilities describe net.tailscale.up
+./nexus capabilities describe zfs.pool.status
+./nexus capabilities describe telegram.send
+
+# Check for new GitHub Releases
+nexus update --check
+
+# Apply latest update in-place (or uninstall)
+sudo nexus update
+sudo nexus uninstall -y --all
 ```
 
 ---
@@ -723,6 +768,7 @@ nexus:
 | `/tailscale_down` | — | `WRITE_NETWORK` | Disconnect from Tailscale network |
 | `/reboot` | `confirm` | `ADMIN_POWER` | Gracefully restart host system (requires explicit `confirm`) |
 | `/poweroff` | `confirm` | `ADMIN_POWER` | Gracefully power off host system (requires explicit `confirm`) |
+| `/backup` | `[password]` | `OPERATOR` | Export AES-256-GCM encrypted host backup archive directly to Telegram chat |
 | `/reload` | — | `ADMIN` | Reload configuration from disk without restarting daemon |
 | `/caps` | — | `READ_SYSTEM` | Introspect all compiled agent capabilities |
 
