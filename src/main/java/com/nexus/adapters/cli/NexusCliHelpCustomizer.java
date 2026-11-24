@@ -45,7 +45,8 @@ public final class NexusCliHelpCustomizer {
                     new CommandEntry("config", "Inspect, edit, reload, and validate config.yml"),
                     new CommandEntry("capabilities", "Introspect registered agent capabilities and schemas"),
                     new CommandEntry("update", "Check for and install the latest Nexus binary release"),
-                    new CommandEntry("uninstall", "Stop background services and clean agent runtime data")
+                    new CommandEntry("uninstall", "Stop background services and clean agent runtime data"),
+                    new CommandEntry("completion", "Generate shell tab auto-completion script (bash, zsh, fish)")
             ))
     );
 
@@ -139,6 +140,13 @@ public final class NexusCliHelpCustomizer {
             Map.entry("uninstall", List.of(
                     "nx uninstall                      # Remove binary and systemd services",
                     "nx uninstall --purge              # Completely purge configs, state & logs"
+            )),
+            Map.entry("completion", List.of(
+                    "nx completion bash                 # Generate Bash auto-completion script",
+                    "nx completion zsh                  # Generate Zsh auto-completion script",
+                    "nx completion fish                 # Generate Fish auto-completion script",
+                    "source <(nexus completion bash)    # Activate tab completion in current session",
+                    "nexus completion bash > /etc/bash_completion.d/nexus"
             ))
     );
 

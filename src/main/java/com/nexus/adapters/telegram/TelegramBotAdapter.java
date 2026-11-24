@@ -7,7 +7,9 @@ import com.nexus.capabilities.scheduler.timer.dto.TimerScope;
 import com.nexus.capabilities.scheduler.timer.dto.TimerStatusRequest;
 import com.nexus.capabilities.storage.zfs.dto.ZfsDatasetDetailRequest;
 import com.nexus.capabilities.system.dto.PowerOperationRequest;
+import com.nexus.capabilities.reminder.dispatch.ReminderDispatchService;
 import com.nexus.capabilities.reminder.dto.ReminderEvent;
+import com.nexus.capabilities.reminder.scheduler.ReminderSchedulerProvider;
 import com.nexus.capabilities.reminder.storage.ReminderStorageManager;
 import com.nexus.config.NexusConfigResolver;
 import com.nexus.config.NexusProperties;
@@ -47,6 +49,8 @@ public class TelegramBotAdapter implements SmartLifecycle {
     private final TelegramFormatter formatter;
     private final ExecutionEngine executionEngine;
     private final ReminderStorageManager reminderStorageManager;
+    private final ReminderSchedulerProvider reminderSchedulerProvider;
+    private final ReminderDispatchService reminderDispatchService;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private ExecutorService pollerExecutor;
@@ -59,13 +63,27 @@ public class TelegramBotAdapter implements SmartLifecycle {
             TelegramSecurityFilter securityFilter,
             TelegramFormatter formatter,
             ExecutionEngine executionEngine,
-            @Autowired(required = false) ReminderStorageManager reminderStorageManager) {
+            @Autowired(required = false) ReminderStorageManager reminderStorageManager,
+            @Autowired(required = false) ReminderSchedulerProvider reminderSchedulerProvider,
+            @Autowired(required = false) ReminderDispatchService reminderDispatchService) {
         this.properties = properties;
         this.client = client;
         this.securityFilter = securityFilter;
         this.formatter = formatter;
         this.executionEngine = executionEngine;
         this.reminderStorageManager = reminderStorageManager;
+        this.reminderSchedulerProvider = reminderSchedulerProvider;
+        this.reminderDispatchService = reminderDispatchService;
+    }
+
+    public TelegramBotAdapter(
+            NexusProperties properties,
+            TelegramClient client,
+            TelegramSecurityFilter securityFilter,
+            TelegramFormatter formatter,
+            ExecutionEngine executionEngine,
+            ReminderStorageManager reminderStorageManager) {
+        this(properties, client, securityFilter, formatter, executionEngine, reminderStorageManager, null, null);
     }
 
     public TelegramBotAdapter(
@@ -74,7 +92,7 @@ public class TelegramBotAdapter implements SmartLifecycle {
             TelegramSecurityFilter securityFilter,
             TelegramFormatter formatter,
             ExecutionEngine executionEngine) {
-        this(properties, client, securityFilter, formatter, executionEngine, null);
+        this(properties, client, securityFilter, formatter, executionEngine, null, null, null);
     }
 
     @Override
@@ -346,6 +364,16 @@ public class TelegramBotAdapter implements SmartLifecycle {
                 handleReminderCommand(text, chatId, botToken);
                 break;
 
+            case "/reminders_next":
+            case "/reminder_next":
+                sendNextReminders(chatId, botToken);
+                break;
+
+            case "/reminders_list":
+            case "/reminder_list":
+                sendReminderList(chatId, botToken, false);
+                break;
+
             default:
                 if (command.startsWith("/")) {
                     // Try mapping command directly to capability ID (e.g. /sys_info -> sys.info)
@@ -472,41 +500,171 @@ public class TelegramBotAdapter implements SmartLifecycle {
 
         String[] parts = text.trim().split("\\s+");
         if (parts.length > 1) {
-            String arg = parts[1].trim();
-            if ("next".equalsIgnoreCase(arg)) {
-                List<ReminderEvent> all = reminderStorageManager.loadAll();
-                ReminderEvent nextEvent = null;
-                Instant earliest = null;
-                for (ReminderEvent e : all) {
-                    if ("ACTIVE".equalsIgnoreCase(e.state().status()) && e.state().nextTriggerAt() != null) {
-                        if (earliest == null || e.state().nextTriggerAt().isBefore(earliest)) {
-                            earliest = e.state().nextTriggerAt();
-                            nextEvent = e;
-                        }
-                    }
-                }
-                String reply = formatter.formatNextReminder(nextEvent);
-                client.sendMessage(botToken, chatId, reply);
+            String sub = parts[1].trim();
+
+            if ("help".equalsIgnoreCase(sub) || "--help".equalsIgnoreCase(sub) || "-h".equalsIgnoreCase(sub)) {
+                sendReminderHelp(chatId, botToken);
                 return;
             }
 
-            Optional<ReminderEvent> eventOpt = reminderStorageManager.findByIdOrUuid(arg);
-            if (eventOpt.isPresent()) {
-                String reply = formatter.formatReminderDetail(eventOpt.get());
-                client.sendMessage(botToken, chatId, reply);
-            } else {
-                client.sendMessage(botToken, chatId, "⚠️ <i>Reminder not found:</i> <code>" + arg + "</code>\n\nUse /reminders to view active reminders.");
+            if ("list".equalsIgnoreCase(sub) || "ls".equalsIgnoreCase(sub)) {
+                sendReminderList(chatId, botToken, false);
+                return;
             }
+
+            if ("all".equalsIgnoreCase(sub)) {
+                sendReminderList(chatId, botToken, true);
+                return;
+            }
+
+            if ("next".equalsIgnoreCase(sub)) {
+                sendNextReminders(chatId, botToken);
+                return;
+            }
+
+            if ("show".equalsIgnoreCase(sub)) {
+                if (parts.length > 2) {
+                    sendReminderDetail(parts[2].trim(), chatId, botToken);
+                } else {
+                    client.sendMessage(botToken, chatId, "⚠️ <i>Please specify reminder ID:</i> <code>/reminders show EVT-001</code>");
+                }
+                return;
+            }
+
+            if ("test".equalsIgnoreCase(sub)) {
+                if (parts.length > 2) {
+                    sendTestReminder(parts[2].trim(), chatId, botToken);
+                } else {
+                    client.sendMessage(botToken, chatId, "⚠️ <i>Please specify reminder ID to test:</i> <code>/reminders test EVT-001</code>");
+                }
+                return;
+            }
+
+            if ("delete".equalsIgnoreCase(sub) || "rm".equalsIgnoreCase(sub)) {
+                if (parts.length > 2) {
+                    deleteReminder(parts[2].trim(), chatId, botToken);
+                } else {
+                    client.sendMessage(botToken, chatId, "⚠️ <i>Please specify reminder ID to delete:</i> <code>/reminders delete EVT-001</code>");
+                }
+                return;
+            }
+
+            // Direct ID lookup: /reminders EVT-001
+            sendReminderDetail(sub, chatId, botToken);
             return;
         }
 
+        // Default: list active reminders
+        sendReminderList(chatId, botToken, false);
+    }
+
+    private void sendReminderList(long chatId, String botToken, boolean showAll) {
+        if (reminderStorageManager == null) {
+            client.sendMessage(botToken, chatId, "⚠️ <i>Reminder subsystem is unavailable.</i>");
+            return;
+        }
         List<ReminderEvent> all = reminderStorageManager.loadAll();
+        if (showAll) {
+            String reply = formatter.formatReminderList(all);
+            client.sendMessage(botToken, chatId, reply);
+            return;
+        }
         List<ReminderEvent> active = all.stream()
                 .filter(e -> "ACTIVE".equalsIgnoreCase(e.state().status()))
                 .toList();
-
         String reply = formatter.formatReminderList(active.isEmpty() && !all.isEmpty() ? all : active);
         client.sendMessage(botToken, chatId, reply);
+    }
+
+    private void sendNextReminders(long chatId, String botToken) {
+        if (reminderStorageManager == null) {
+            client.sendMessage(botToken, chatId, "⚠️ <i>Reminder subsystem is unavailable.</i>");
+            return;
+        }
+        List<ReminderEvent> all = reminderStorageManager.loadAll();
+        Instant earliest = null;
+        for (ReminderEvent e : all) {
+            if ("ACTIVE".equalsIgnoreCase(e.state().status()) && e.state().nextTriggerAt() != null) {
+                if (earliest == null || e.state().nextTriggerAt().isBefore(earliest)) {
+                    earliest = e.state().nextTriggerAt();
+                }
+            }
+        }
+
+        if (earliest == null) {
+            client.sendMessage(botToken, chatId, formatter.formatNextReminders(List.of()));
+            return;
+        }
+
+        Instant finalEarliest = earliest;
+        List<ReminderEvent> matching = all.stream()
+                .filter(e -> "ACTIVE".equalsIgnoreCase(e.state().status()) && finalEarliest.equals(e.state().nextTriggerAt()))
+                .toList();
+
+        String reply = formatter.formatNextReminders(matching);
+        client.sendMessage(botToken, chatId, reply);
+    }
+
+    private void sendReminderDetail(String identifier, long chatId, String botToken) {
+        if (reminderStorageManager == null) {
+            client.sendMessage(botToken, chatId, "⚠️ <i>Reminder subsystem is unavailable.</i>");
+            return;
+        }
+        Optional<ReminderEvent> eventOpt = reminderStorageManager.findByIdOrUuid(identifier);
+        if (eventOpt.isPresent()) {
+            String reply = formatter.formatReminderDetail(eventOpt.get());
+            client.sendMessage(botToken, chatId, reply);
+        } else {
+            client.sendMessage(botToken, chatId, "⚠️ <i>Reminder not found:</i> <code>" + identifier + "</code>\n\nUse /reminders to view active reminders.");
+        }
+    }
+
+    private void sendTestReminder(String identifier, long chatId, String botToken) {
+        if (reminderDispatchService == null) {
+            client.sendMessage(botToken, chatId, "⚠️ <i>Reminder dispatch service is unavailable.</i>");
+            return;
+        }
+        boolean ok = reminderDispatchService.testDispatch(identifier);
+        if (ok) {
+            client.sendMessage(botToken, chatId, "✅ <b>Test Alert Dispatched:</b> Successfully sent test notification for <code>" + identifier + "</code>.");
+        } else {
+            client.sendMessage(botToken, chatId, "❌ <b>Test Alert Failed:</b> Reminder <code>" + identifier + "</code> not found or notification dispatch failed.");
+        }
+    }
+
+    private void deleteReminder(String identifier, long chatId, String botToken) {
+        if (reminderStorageManager == null) {
+            client.sendMessage(botToken, chatId, "⚠️ <i>Reminder subsystem is unavailable.</i>");
+            return;
+        }
+        Optional<ReminderEvent> eventOpt = reminderStorageManager.findByIdOrUuid(identifier);
+        if (eventOpt.isEmpty()) {
+            client.sendMessage(botToken, chatId, "⚠️ <i>Reminder not found to delete:</i> <code>" + identifier + "</code>");
+            return;
+        }
+        ReminderEvent event = eventOpt.get();
+        boolean deleted = reminderStorageManager.deleteByIdOrUuid(event.id());
+        if (deleted) {
+            if (reminderSchedulerProvider != null) {
+                reminderSchedulerProvider.disarmTimer(event.id());
+            }
+            client.sendMessage(botToken, chatId, "🗑️ <b>Deleted Reminder:</b> <code>" + event.id() + "</code> (" + event.title() + ") deleted and associated timers disarmed.");
+        } else {
+            client.sendMessage(botToken, chatId, "❌ <i>Could not delete reminder:</i> <code>" + identifier + "</code>");
+        }
+    }
+
+    private void sendReminderHelp(long chatId, String botToken) {
+        String helpHtml = "📅 <b>Nexus Scheduled Reminders Management</b>\n\n" +
+                "• <code>/reminders</code> - List all active scheduled reminders\n" +
+                "• <code>/reminders all</code> - List all reminders (including completed/paused)\n" +
+                "• <code>/reminders next</code> - View immediate upcoming reminder countdown\n" +
+                "• <code>/reminders &lt;id&gt;</code> - View stages and configuration for reminder\n" +
+                "• <code>/reminders show &lt;id&gt;</code> - Detailed breakdown of stages and triggers\n" +
+                "• <code>/reminders test &lt;id&gt;</code> - Dispatch a test notification alert right now\n" +
+                "• <code>/reminders delete &lt;id&gt;</code> - Delete reminder and disarm systemd timers\n\n" +
+                "<i>Tip: You can also use /reminders_next or /reminders_list as quick shortcuts.</i>";
+        client.sendMessage(botToken, chatId, helpHtml);
     }
 
     private void sendHelpMessage(long chatId, String botToken) {
@@ -529,8 +687,11 @@ public class TelegramBotAdapter implements SmartLifecycle {
                 "<b>Automation & Reminders:</b>\n" +
                 "• /timers [id] - List scheduled timers or inspect live timer status\n" +
                 "• /reminders - List scheduled reminders and upcoming stages\n" +
+                "• /reminders all - List all reminders (active & completed)\n" +
                 "• /reminders next - Immediate next reminder & countdown\n" +
-                "• /reminders [id] - Inspect detailed reminder configuration & stages\n" +
+                "• /reminders &lt;id&gt; - Inspect detailed reminder configuration & stages\n" +
+                "• /reminders test &lt;id&gt; - Dispatch test notification alert\n" +
+                "• /reminders delete &lt;id&gt; - Delete reminder and disarm timers\n" +
                 "• /tailscale - Tailscale VPN mesh status & peers\n" +
                 "• /tailscale_up - Connect and bring Tailscale VPN up\n" +
                 "• /tailscale_down - Disconnect Tailscale VPN\n\n" +

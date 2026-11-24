@@ -34,7 +34,8 @@ import java.util.concurrent.Callable;
         ConfigCommand.class,
         CapabilitiesCommand.class,
         UpdateCommand.class,
-        UninstallCommand.class
+        UninstallCommand.class,
+        com.nexus.adapters.cli.commands.CompletionCommand.class
     }
 )
 public class NexusCliRootCommand implements Callable<Integer> {

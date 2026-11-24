@@ -2,6 +2,7 @@ package com.nexus.adapters.telegram;
 
 import com.nexus.capabilities.network.tailscale.dto.TailscaleOperationResult;
 import com.nexus.capabilities.network.tailscale.dto.TailscaleStatusReport;
+import com.nexus.capabilities.reminder.dto.*;
 import com.nexus.capabilities.storage.dto.DiskListReport;
 import com.nexus.capabilities.storage.dto.DiskPartitionReport;
 import com.nexus.capabilities.storage.dto.SmartReport;
@@ -211,5 +212,56 @@ class TelegramFormatterTest {
 
         assertThat(html).contains("📊 <b>ZFS Dataset: tank/data</b>");
         assertThat(html).contains("<i>compression:</i> <code>zstd</code>");
+    }
+
+    @Test
+    @DisplayName("Formats multiple simultaneous next reminders into combined Telegram card")
+    void testFormatNextRemindersMultipleEvents() {
+        Instant trigger = Instant.now().plusSeconds(3600);
+        ReminderEvent e1 = new ReminderEvent(
+                "uuid-1", "EVT-001", "Team Standup", com.nexus.capabilities.reminder.dto.ReminderType.MEETING, "WORK",
+                java.time.LocalDate.of(2026, 12, 1), java.time.LocalTime.of(10, 0), java.time.ZoneId.of("Asia/Kolkata"),
+                com.nexus.capabilities.reminder.dto.ReminderRecurrence.NONE, java.util.Collections.emptyMap(),
+                java.util.List.of(),
+                new com.nexus.capabilities.reminder.dto.ReminderEventState("2026", "ACTIVE", null, "0m", trigger),
+                java.util.List.of()
+        );
+        ReminderEvent e2 = new ReminderEvent(
+                "uuid-2", "EVT-002", "Client Demo", com.nexus.capabilities.reminder.dto.ReminderType.EVENT, "WORK",
+                java.time.LocalDate.of(2026, 12, 1), java.time.LocalTime.of(10, 0), java.time.ZoneId.of("Asia/Kolkata"),
+                com.nexus.capabilities.reminder.dto.ReminderRecurrence.NONE, java.util.Collections.emptyMap(),
+                java.util.List.of(),
+                new com.nexus.capabilities.reminder.dto.ReminderEventState("2026", "ACTIVE", null, "0m", trigger),
+                java.util.List.of()
+        );
+
+        String html = formatter.formatNextReminders(java.util.List.of(e1, e2));
+
+        assertThat(html).contains("⏰ <b>Next Upcoming Reminders</b>");
+        assertThat(html).contains("2 events scheduled at the same time");
+        assertThat(html).contains("Team Standup");
+        assertThat(html).contains("Client Demo");
+    }
+
+    @Test
+    @DisplayName("Formats reminder detail with DELIVERED and SKIPPED milestone badges")
+    void testFormatReminderDetailWithSkippedStage() {
+        ReminderEvent event = new ReminderEvent(
+                "uuid-1", "EVT-001", "Bill Pay", com.nexus.capabilities.reminder.dto.ReminderType.BILL, "FINANCE",
+                java.time.LocalDate.of(2026, 12, 1), java.time.LocalTime.of(10, 0), java.time.ZoneId.of("Asia/Kolkata"),
+                com.nexus.capabilities.reminder.dto.ReminderRecurrence.MONTHLY, java.util.Collections.emptyMap(),
+                java.util.List.of(
+                        new com.nexus.capabilities.reminder.dto.ReminderStage("2d", "P2D", Instant.now().minusSeconds(7200), null, null, com.nexus.capabilities.reminder.dto.ReminderStageStatus.SKIPPED),
+                        new com.nexus.capabilities.reminder.dto.ReminderStage("1d", "P1D", Instant.now().plusSeconds(3600), null, null, com.nexus.capabilities.reminder.dto.ReminderStageStatus.PENDING)
+                ),
+                new com.nexus.capabilities.reminder.dto.ReminderEventState("2026", "ACTIVE", null, "1d", Instant.now().plusSeconds(3600)),
+                java.util.List.of()
+        );
+
+        String html = formatter.formatReminderDetail(event);
+
+        assertThat(html).contains("⏭️ [SKIPPED]");
+        assertThat(html).contains("⏳ [PENDING]");
+        assertThat(html).contains("Bill Pay");
     }
 }

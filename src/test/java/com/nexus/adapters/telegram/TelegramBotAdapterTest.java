@@ -32,6 +32,8 @@ class TelegramBotAdapterTest {
     private TelegramFormatter formatter;
     private ExecutionEngine executionEngine;
     private ReminderStorageManager reminderStorageManager;
+    private com.nexus.capabilities.reminder.scheduler.ReminderSchedulerProvider reminderSchedulerProvider;
+    private com.nexus.capabilities.reminder.dispatch.ReminderDispatchService reminderDispatchService;
     private TelegramBotAdapter adapter;
     private ObjectMapper objectMapper;
 
@@ -48,9 +50,11 @@ class TelegramBotAdapterTest {
         formatter = new TelegramFormatter();
         executionEngine = mock(ExecutionEngine.class);
         reminderStorageManager = mock(ReminderStorageManager.class);
+        reminderSchedulerProvider = mock(com.nexus.capabilities.reminder.scheduler.ReminderSchedulerProvider.class);
+        reminderDispatchService = mock(com.nexus.capabilities.reminder.dispatch.ReminderDispatchService.class);
         objectMapper = new ObjectMapper();
 
-        adapter = new TelegramBotAdapter(properties, client, securityFilter, formatter, executionEngine, reminderStorageManager);
+        adapter = new TelegramBotAdapter(properties, client, securityFilter, formatter, executionEngine, reminderStorageManager, reminderSchedulerProvider, reminderDispatchService);
     }
 
     private ObjectNode createUpdateJson(long updateId, long chatId, long senderId, String text) {
@@ -302,5 +306,114 @@ class TelegramBotAdapterTest {
         verify(client).sendMessage(eq("mock-token-123"), eq(999L), replyCaptor.capture());
         assertThat(replyCaptor.getValue()).contains("Reminder: Specific Event");
         assertThat(replyCaptor.getValue()).contains("EVT-001");
+    }
+
+    @Test
+    @DisplayName("Routes /reminders list and /reminders ls to reminder list formatter")
+    void testRemindersListSubcommand() {
+        ReminderEvent event = new ReminderEvent(
+                "uuid-1", "EVT-001", "Birthday Event", ReminderType.BIRTHDAY, "FAMILY",
+                LocalDate.of(2026, 11, 25), LocalTime.of(9, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.YEARLY, Collections.emptyMap(),
+                List.of(new ReminderStage("0m", "PT0S", Instant.now(), null, null, ReminderStageStatus.PENDING)),
+                ReminderEventState.initial("2026", "0m", Instant.now()), Collections.emptyList()
+        );
+        when(reminderStorageManager.loadAll()).thenReturn(List.of(event));
+        when(client.sendMessage(anyString(), anyLong(), anyString())).thenReturn(true);
+
+        ObjectNode update = createUpdateJson(16, 999L, 100L, "/reminders list");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        ArgumentCaptor<String> replyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendMessage(eq("mock-token-123"), eq(999L), replyCaptor.capture());
+        assertThat(replyCaptor.getValue()).contains("Nexus Scheduled Reminders & Events");
+        assertThat(replyCaptor.getValue()).contains("Birthday Event");
+    }
+
+    @Test
+    @DisplayName("Routes /reminders next with multiple simultaneous events to multi-event formatter")
+    void testRemindersNextMultipleSimultaneous() {
+        Instant commonTime = Instant.now().plusSeconds(1800);
+        ReminderEvent e1 = new ReminderEvent(
+                "uuid-1", "EVT-001", "Sync 1", ReminderType.MEETING, "WORK",
+                LocalDate.of(2026, 12, 1), LocalTime.of(10, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.NONE, Collections.emptyMap(),
+                List.of(new ReminderStage("0m", "PT0S", commonTime, null, null, ReminderStageStatus.PENDING)),
+                new ReminderEventState("2026", "ACTIVE", null, "0m", commonTime), Collections.emptyList()
+        );
+        ReminderEvent e2 = new ReminderEvent(
+                "uuid-2", "EVT-002", "Sync 2", ReminderType.MEETING, "WORK",
+                LocalDate.of(2026, 12, 1), LocalTime.of(10, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.NONE, Collections.emptyMap(),
+                List.of(new ReminderStage("0m", "PT0S", commonTime, null, null, ReminderStageStatus.PENDING)),
+                new ReminderEventState("2026", "ACTIVE", null, "0m", commonTime), Collections.emptyList()
+        );
+        when(reminderStorageManager.loadAll()).thenReturn(List.of(e1, e2));
+        when(client.sendMessage(anyString(), anyLong(), anyString())).thenReturn(true);
+
+        ObjectNode update = createUpdateJson(17, 999L, 100L, "/reminders_next");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        ArgumentCaptor<String> replyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendMessage(eq("mock-token-123"), eq(999L), replyCaptor.capture());
+        assertThat(replyCaptor.getValue()).contains("2 events scheduled at the same time");
+        assertThat(replyCaptor.getValue()).contains("Sync 1");
+        assertThat(replyCaptor.getValue()).contains("Sync 2");
+    }
+
+    @Test
+    @DisplayName("Routes /reminders test EVT-001 to test notification dispatch")
+    void testRemindersTestSubcommand() {
+        when(reminderDispatchService.testDispatch("EVT-001")).thenReturn(true);
+        when(client.sendMessage(anyString(), anyLong(), anyString())).thenReturn(true);
+
+        ObjectNode update = createUpdateJson(18, 999L, 100L, "/reminders test EVT-001");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        verify(reminderDispatchService).testDispatch("EVT-001");
+        ArgumentCaptor<String> replyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendMessage(eq("mock-token-123"), eq(999L), replyCaptor.capture());
+        assertThat(replyCaptor.getValue()).contains("Test Alert Dispatched");
+        assertThat(replyCaptor.getValue()).contains("EVT-001");
+    }
+
+    @Test
+    @DisplayName("Routes /reminders delete EVT-001 to deletion and timer disarm")
+    void testRemindersDeleteSubcommand() {
+        ReminderEvent event = new ReminderEvent(
+                "uuid-1", "EVT-001", "Old Event", ReminderType.EVENT, "GENERAL",
+                LocalDate.of(2026, 12, 1), LocalTime.of(10, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.NONE, Collections.emptyMap(),
+                List.of(new ReminderStage("0m", "PT0S", Instant.now(), null, null, ReminderStageStatus.PENDING)),
+                ReminderEventState.initial("2026", "0m", Instant.now()), Collections.emptyList()
+        );
+        when(reminderStorageManager.findByIdOrUuid("EVT-001")).thenReturn(Optional.of(event));
+        when(reminderStorageManager.deleteByIdOrUuid("EVT-001")).thenReturn(true);
+        when(client.sendMessage(anyString(), anyLong(), anyString())).thenReturn(true);
+
+        ObjectNode update = createUpdateJson(19, 999L, 100L, "/reminders delete EVT-001");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        verify(reminderStorageManager).deleteByIdOrUuid("EVT-001");
+        verify(reminderSchedulerProvider).disarmTimer("EVT-001");
+        ArgumentCaptor<String> replyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendMessage(eq("mock-token-123"), eq(999L), replyCaptor.capture());
+        assertThat(replyCaptor.getValue()).contains("Deleted Reminder");
+        assertThat(replyCaptor.getValue()).contains("EVT-001");
+    }
+
+    @Test
+    @DisplayName("Routes /reminders help to reminder help guide")
+    void testRemindersHelpSubcommand() {
+        when(client.sendMessage(anyString(), anyLong(), anyString())).thenReturn(true);
+
+        ObjectNode update = createUpdateJson(20, 999L, 100L, "/reminders help");
+        adapter.processUpdate(update, properties.getTelegram());
+
+        ArgumentCaptor<String> replyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(client).sendMessage(eq("mock-token-123"), eq(999L), replyCaptor.capture());
+        assertThat(replyCaptor.getValue()).contains("Nexus Scheduled Reminders Management");
+        assertThat(replyCaptor.getValue()).contains("/reminders next");
+        assertThat(replyCaptor.getValue()).contains("/reminders delete");
     }
 }

@@ -609,6 +609,45 @@ sudo nexus update
 sudo nexus uninstall -y --all
 ```
 
+#### 10. Shell Auto-Completion (`nexus completion`)
+Nexus can generate native shell auto-completion scripts for **Bash**, **Zsh**, and **Fish**, providing seamless tab-completion for all subcommands, nested subcommands, options, and aliases (supporting both `nexus` and `nx`):
+
+```bash
+# ==============================================================================
+# BASH
+# ==============================================================================
+# Activate in current shell session:
+source <(nexus completion bash)
+
+# Install permanently (system-wide):
+sudo nexus completion bash > /etc/bash_completion.d/nexus
+
+# Install permanently (user-specific):
+nexus completion bash >> ~/.bash_completion
+
+# ==============================================================================
+# ZSH
+# ==============================================================================
+# Activate in current shell session:
+source <(nexus completion zsh)
+
+# Install permanently:
+mkdir -p ~/.zsh/completion
+nexus completion zsh > ~/.zsh/completion/_nexus
+# (Ensure 'fpath=(~/.zsh/completion $fpath)' is in ~/.zshrc before compinit)
+
+# ==============================================================================
+# FISH
+# ==============================================================================
+# Activate in current shell session:
+nexus completion fish | source
+
+# Install permanently:
+mkdir -p ~/.config/fish/completions
+nexus completion fish > ~/.config/fish/completions/nexus.fish
+ln -sf ~/.config/fish/completions/nexus.fish ~/.config/fish/completions/nx.fish
+```
+
 ---
 
 ## Daemon Mode & OS Service Supervision
@@ -673,8 +712,12 @@ nexus:
 | `/zfs_get` | `<dataset>` | `READ_STORAGE` | Inspect detailed properties for a specific ZFS dataset |
 | `/services` | — | `READ_SERVICES` | Installed system services status |
 | `/timers` | `[id]` | `READ_SERVICES` | List recurring timers or inspect live timer status & journal logs |
-| `/reminders` | `[id]` | `READ_SERVICES` | List active scheduled reminders, inspect reminder details & milestones |
-| `/reminders next` | — | `READ_SERVICES` | Immediate next upcoming reminder and countdown |
+| `/reminders` | `[list \| all]` | `READ_SERVICES` | List active (or all) scheduled reminders & next notification milestones |
+| `/reminders next` | — | `READ_SERVICES` | Immediate next upcoming reminder(s) and live countdown |
+| `/reminders <id>` | `<id>` | `READ_SERVICES` | Inspect detailed reminder configuration, target date, stages, and status |
+| `/reminders show <id>` | `<id>` | `READ_SERVICES` | Detailed breakdown of stages, triggers, and delivery badges |
+| `/reminders test <id>` | `<id>` | `OPERATOR` | Dispatch a live test notification alert for verification |
+| `/reminders delete <id>` | `<id>` | `OPERATOR` | Delete a scheduled reminder and disarm background systemd timers |
 | `/tailscale` | — | `READ_NETWORK` | Tailscale VPN state, MagicDNS name, tailnet IPs, and peers |
 | `/tailscale_up` | `[args]` | `WRITE_NETWORK` | Connect to Tailscale network (`/tailscale_up --accept-routes`) |
 | `/tailscale_down` | — | `WRITE_NETWORK` | Disconnect from Tailscale network |

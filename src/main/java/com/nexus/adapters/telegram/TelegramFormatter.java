@@ -532,6 +532,43 @@ public class TelegramFormatter {
         return sb.toString();
     }
 
+    public String formatNextReminders(List<ReminderEvent> events) {
+        if (events == null || events.isEmpty()) {
+            return "⏰ <b>Next Upcoming Reminder</b>\n\n<i>No pending reminder alerts scheduled.</i>";
+        }
+
+        if (events.size() == 1) {
+            return formatNextReminder(events.get(0));
+        }
+
+        StringBuilder sb = new StringBuilder("⏰ <b>Next Upcoming Reminders</b> (<code>")
+                .append(events.size()).append(" events scheduled at the same time</code>)\n\n");
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("EEEE, MMM d, yyyy HH:mm:ss");
+
+        for (int i = 0; i < events.size(); i++) {
+            ReminderEvent e = events.get(i);
+            String icon = getReminderIcon(e.type());
+            String rel = formatRelativeDays(e.targetDate(), e.timezone());
+
+            sb.append("<b>[").append(i + 1).append("] ").append(escapeHtml(e.title()))
+              .append("</b> (").append(icon).append(" <code>").append(escapeHtml(e.id())).append("</code>)\n")
+              .append("• <b>Event Date:</b> ").append(e.targetDate()).append(" (").append(rel).append(")\n");
+
+            if (e.state() != null && e.state().nextTriggerAt() != null) {
+                String nextStage = e.state().nextStage() != null ? e.state().nextStage() : "-";
+                String nextTime = e.state().nextTriggerAt().atZone(e.timezone()).format(dtf);
+                String countdown = formatCountdown(e.state().nextTriggerAt());
+                sb.append("• <b>Next Alert:</b> Stage <code>").append(nextStage).append("</code> at ").append(nextTime)
+                  .append(" (").append(countdown).append(")\n");
+            }
+
+            sb.append("• <b>Recurrence:</b> ").append(e.recurrence()).append("\n")
+              .append("• <b>Status:</b> 🟢 ").append(e.state() != null ? e.state().status() : "ACTIVE").append("\n\n");
+        }
+
+        return sb.toString().trim();
+    }
+
     public String formatNextReminder(ReminderEvent e) {
         if (e == null) {
             return "⏰ <b>Next Upcoming Reminder</b>\n\n<i>No pending reminder alerts scheduled.</i>";
@@ -586,7 +623,9 @@ public class TelegramFormatter {
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
         for (ReminderStage s : e.stages()) {
             String timeStr = s.triggerAt() != null ? s.triggerAt().atZone(e.timezone()).format(dtf) : "-";
-            String badge = s.status() == ReminderStageStatus.DELIVERED ? "✅ [DELIVERED]" : "⏳ [PENDING]";
+            String badge = s.status() == ReminderStageStatus.DELIVERED
+                    ? "✅ [DELIVERED]"
+                    : (s.status() == ReminderStageStatus.SKIPPED ? "⏭️ [SKIPPED]" : "⏳ [PENDING]");
             sb.append("• <code>").append(s.stage()).append("</code>: ").append(timeStr).append(" ").append(badge);
             if (s.customMessage() != null && !s.customMessage().isBlank()) {
                 sb.append(" - <i>\"").append(escapeHtml(s.customMessage())).append("\"</i>");
