@@ -96,6 +96,7 @@ public class BackupManager {
             stats.put("totalFiles", filesToArchive.size());
 
             long totalUncompressedBytes = 0;
+            BackupManifest manifest = null;
 
             try (ZipOutputStream zos = new ZipOutputStream(zipBaos)) {
                 // Add all files
@@ -135,7 +136,7 @@ public class BackupManager {
                     hostname = InetAddress.getLocalHost().getHostName();
                 } catch (Exception ignored) {}
 
-                BackupManifest manifest = new BackupManifest(
+                manifest = new BackupManifest(
                         1,
                         Instant.now(),
                         hostname,
@@ -168,7 +169,7 @@ public class BackupManager {
             }
             Files.write(targetPath, finalArchiveBytes);
 
-            BackupManifest finalManifest = inspectBackupBytes(zipBaos.toByteArray());
+            BackupManifest finalManifest = manifest;
             String msg = String.format("Successfully created %sbackup archive (%d files, %d bytes) at %s",
                     request.encrypt() ? "encrypted " : "", manifestEntries.size(), finalArchiveBytes.length, targetPath);
             return new BackupResult(true, targetPath, finalArchiveBytes.length, manifestEntries.size(),
@@ -337,11 +338,80 @@ public class BackupManager {
             while ((entry = zis.getNextEntry()) != null) {
                 if ("manifest.json".equals(entry.getName())) {
                     byte[] bytes = zis.readAllBytes();
-                    return objectMapper.readValue(bytes, BackupManifest.class);
+                    return parseManifest(bytes);
                 }
             }
         }
         throw new IllegalArgumentException("Backup archive is missing manifest.json header");
+    }
+
+    private BackupManifest parseManifest(byte[] bytes) {
+        try {
+            return objectMapper.readValue(bytes, BackupManifest.class);
+        } catch (Exception e) {
+            log.debug("Standard ObjectMapper deserialization failed, falling back to manual JsonNode parser: {}", e.getMessage());
+            return parseManifestFromNode(bytes);
+        }
+    }
+
+    private BackupManifest parseManifestFromNode(byte[] bytes) {
+        try {
+            var root = objectMapper.readTree(bytes);
+            int version = root.path("version").asInt(1);
+            Instant createdAt = null;
+            String dateText = root.path("createdAt").asText(null);
+            if (dateText != null && !dateText.isBlank()) {
+                try {
+                    createdAt = Instant.parse(dateText);
+                } catch (Exception ignored) {}
+            }
+            String hostname = root.path("hostname").asText("unknown");
+            String os = root.path("os").asText("unknown");
+            String nexusVersion = root.path("nexusVersion").asText("unknown");
+            boolean encrypted = root.path("encrypted").asBoolean(false);
+
+            List<String> scopes = new ArrayList<>();
+            var scopesNode = root.path("scopes");
+            if (scopesNode.isArray()) {
+                for (var s : scopesNode) {
+                    scopes.add(s.asText());
+                }
+            }
+
+            Map<String, Object> stats = new LinkedHashMap<>();
+            var statsNode = root.path("stats");
+            if (statsNode.isObject()) {
+                var it = statsNode.fields();
+                while (it.hasNext()) {
+                    var entry = it.next();
+                    if (entry.getValue().isNumber()) {
+                        stats.put(entry.getKey(), entry.getValue().numberValue());
+                    } else if (entry.getValue().isBoolean()) {
+                        stats.put(entry.getKey(), entry.getValue().asBoolean());
+                    } else {
+                        stats.put(entry.getKey(), entry.getValue().asText());
+                    }
+                }
+            }
+
+            List<BackupManifest.BackupFileEntry> files = new ArrayList<>();
+            var filesNode = root.path("files");
+            if (filesNode.isArray()) {
+                for (var f : filesNode) {
+                    files.add(new BackupManifest.BackupFileEntry(
+                            f.path("archivePath").asText(""),
+                            f.path("targetPath").asText(""),
+                            f.path("scope").asText(""),
+                            f.path("sizeBytes").asLong(0),
+                            f.path("sha256").asText("")
+                    ));
+                }
+            }
+
+            return new BackupManifest(version, createdAt, hostname, os, nexusVersion, encrypted, scopes, stats, files);
+        } catch (Exception ex) {
+            throw new RuntimeException("Failed to parse manifest.json: " + ex.getMessage(), ex);
+        }
     }
 
     private Map<String, Path> discoverFilesToArchive(boolean includeSystem, boolean includeUser) {
