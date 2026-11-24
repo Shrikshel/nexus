@@ -147,6 +147,29 @@ class ReminderDispatchServiceTest {
     }
 
     @Test
+    @DisplayName("Rolls over sub-day recurring event advancing both date and clock (EVERY 16h)")
+    void testSubDayRecurrenceRollover() {
+        ReminderCreateRequest req = new ReminderCreateRequest(
+                "EVT-SHIFT", "Shift Handover", ReminderType.EVENT, "WORK",
+                LocalDate.of(2026, 11, 24), LocalTime.of(18, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.fromString("every 16h"), List.of("0m"), Collections.emptyMap(), Collections.emptyMap()
+        );
+        storageManager.createReminder(req);
+
+        dispatchService.dispatch("EVT-SHIFT");
+
+        ReminderEvent rolledOver = storageManager.findByIdOrUuid("EVT-SHIFT").orElseThrow();
+        assertThat(rolledOver.targetDate()).isEqualTo(LocalDate.of(2026, 11, 25));
+        assertThat(rolledOver.targetTime()).isEqualTo(LocalTime.of(10, 0));
+        assertThat(rolledOver.state().status()).isEqualTo("ACTIVE");
+        assertThat(rolledOver.state().activeCycle()).isEqualTo("2026-11-25T10:00");
+        assertThat(rolledOver.history()).hasSize(1);
+        assertThat(rolledOver.history().get(0).targetDate()).isEqualTo(LocalDate.of(2026, 11, 24));
+
+        verify(schedulerProvider, times(1)).armTimer(any(ReminderEvent.class));
+    }
+
+    @Test
     @DisplayName("Test dispatch sends preview notification without advancing event state")
     void testTestDispatch() {
         ReminderCreateRequest req = new ReminderCreateRequest(

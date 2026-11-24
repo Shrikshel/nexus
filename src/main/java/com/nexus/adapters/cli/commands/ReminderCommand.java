@@ -42,6 +42,7 @@ import java.util.concurrent.Callable;
         ReminderCommand.EditSubcommand.class,
         ReminderCommand.DeleteSubcommand.class,
         ReminderCommand.TestSubcommand.class,
+        ReminderCommand.TemplateSubcommand.class,
         ReminderCommand.ExportSubcommand.class,
         ReminderCommand.ImportSubcommand.class,
         ReminderCommand.SyncSubcommand.class,
@@ -287,6 +288,9 @@ public class ReminderCommand implements Callable<Integer> {
         @ParentCommand
         private ReminderCommand parent;
 
+        @Option(names = {"--example", "-e"}, help = true, description = "Print a copy-pasteable command template with all parameters and exit")
+        private boolean showExample;
+
         @Option(names = {"--title", "-t"}, required = true, description = "Event title (e.g. \"Mom's Birthday\")")
         private String title;
 
@@ -302,7 +306,7 @@ public class ReminderCommand implements Callable<Integer> {
         @Option(names = {"--category"}, description = "Category classification (e.g. FAMILY, FINANCE)", defaultValue = "GENERAL")
         private String category;
 
-        @Option(names = {"--recurrence", "-r"}, description = "Recurrence policy: NONE, DAILY, WEEKLY, MONTHLY, YEARLY", defaultValue = "NONE")
+        @Option(names = {"--recurrence", "-r"}, description = "Recurrence policy: NONE, DAILY, WEEKLY, MONTHLY, YEARLY, or intervals (e.g. 'every 5m', '16h', '2d', '3mo', '1y')", defaultValue = "NONE")
         private String recurrenceStr;
 
         @Option(names = {"--stages"}, description = "Comma-separated alert stages (e.g. 7d,3d,1d,1h,0m)")
@@ -322,10 +326,16 @@ public class ReminderCommand implements Callable<Integer> {
             PrintWriter out = spec.commandLine().getOut();
             PrintWriter err = spec.commandLine().getErr();
 
+            if (showExample) {
+                printTemplate(out);
+                return 0;
+            }
+
             if (!isRoot()) {
                 err.println("\u001B[31m✗ Error: Creating reminders requires root privileges so systemd timers run 24/7 as root.\u001B[0m");
                 err.println("  👉 Please run with sudo:");
                 err.println("     sudo nexus reminder add --title \"" + title + "\" --date " + dateStr);
+                err.println("  💡 Tip: Run 'nx reminder template' or 'nx reminder add -e' to view full parameter options.");
                 return 1;
             }
 
@@ -334,6 +344,7 @@ public class ReminderCommand implements Callable<Integer> {
                 targetDate = LocalDate.parse(dateStr.trim());
             } catch (Exception e) {
                 err.println("\u001B[31mInvalid date format: " + dateStr + " (must be YYYY-MM-DD)\u001B[0m");
+                err.println("  💡 Tip: Run 'nx reminder template' or 'nx reminder add -e' to view full parameter options.");
                 return 1;
             }
 
@@ -342,6 +353,7 @@ public class ReminderCommand implements Callable<Integer> {
                 targetTime = LocalTime.parse(timeStr.trim());
             } catch (Exception e) {
                 err.println("\u001B[31mInvalid time format: " + timeStr + " (must be HH:mm:ss)\u001B[0m");
+                err.println("  💡 Tip: Run 'nx reminder template' or 'nx reminder add -e' to view full parameter options.");
                 return 1;
             }
 
@@ -409,7 +421,7 @@ public class ReminderCommand implements Callable<Integer> {
         @Option(names = {"--category"}, description = "Updated category")
         private String newCategory;
 
-        @Option(names = {"--recurrence", "-r"}, description = "Updated recurrence policy")
+        @Option(names = {"--recurrence", "-r"}, description = "Updated recurrence policy: NONE, DAILY, WEEKLY, MONTHLY, YEARLY, or intervals (e.g. 'every 5m', '16h', '2d', '3mo', '1y')")
         private String newRecurrenceStr;
 
         @Option(names = {"--stages"}, description = "Updated stages (comma-separated)")
@@ -540,6 +552,26 @@ public class ReminderCommand implements Callable<Integer> {
                 err.println("\u001B[31mFailed to send test notification. Verify Telegram bot credentials in config.yml.\u001B[0m");
                 return 1;
             }
+        }
+    }
+
+    // 7b. TEMPLATE
+    @Component
+    @Command(
+        name = "template",
+        aliases = {"example", "samples"},
+        description = "Display copy-pasteable command templates with all available parameters",
+        mixinStandardHelpOptions = true
+    )
+    public static class TemplateSubcommand implements Callable<Integer> {
+        @Spec
+        private CommandSpec spec;
+
+        @Override
+        public Integer call() {
+            PrintWriter out = spec.commandLine().getOut();
+            printTemplate(out);
+            return 0;
         }
     }
 
@@ -734,6 +766,58 @@ public class ReminderCommand implements Callable<Integer> {
         if (text == null) return "";
         if (text.length() <= maxLen) return text;
         return text.substring(0, maxLen - 1) + "…";
+    }
+
+    public static void printTemplate(PrintWriter out) {
+        out.println("\u001B[1;36m================================================================================\u001B[0m");
+        out.println("\u001B[1;33m📋 Nexus Reminder - Complete Copy-Paste Command Template\u001B[0m");
+        out.println("\u001B[1;36m================================================================================\u001B[0m\n");
+
+        out.println("\u001B[1;32m# 1. FULL COMMAND (All Parameters Specified):\u001B[0m");
+        out.println("sudo nexus reminder add \\");
+        out.println("  --title \"Quarterly Infrastructure Audit\" \\");
+        out.println("  --date 2026-12-01 \\");
+        out.println("  --time 10:00:00 \\");
+        out.println("  --type EVENT \\");
+        out.println("  --category INFRA \\");
+        out.println("  --recurrence \"every 3mo\" \\");
+        out.println("  --stages 7d,3d,1d,2h,0m \\");
+        out.println("  --notes \"Review NVMe SMART metrics, ZFS scrubs & SSL cert renewals\" \\");
+        out.println("  --id EVT-INFRA-REV\n");
+
+        out.println("\u001B[1;33mPARAMETER REFERENCE:\u001B[0m");
+        out.println("  \u001B[1;37m--title, -t\u001B[0m       \u001B[31m[Required]\u001B[0m Event title (e.g. \"Mom's Birthday\", \"AWS Hosting Bill\")");
+        out.println("  \u001B[1;37m--date, -d\u001B[0m        \u001B[31m[Required]\u001B[0m Target event date in YYYY-MM-DD (e.g. 2026-12-01)");
+        out.println("  \u001B[1;37m--time\u001B[0m            \u001B[36m[Optional]\u001B[0m Target time in HH:mm:ss (default: 09:00:00)");
+        out.println("  \u001B[1;37m--type\u001B[0m            \u001B[36m[Optional]\u001B[0m BIRTHDAY, BILL, ANNIVERSARY, MEETING, EVENT, CUSTOM (default: EVENT)");
+        out.println("  \u001B[1;37m--category\u001B[0m        \u001B[36m[Optional]\u001B[0m Category tag (e.g. FAMILY, FINANCE, WORK, INFRA, GENERAL)");
+        out.println("  \u001B[1;37m--recurrence, -r\u001B[0m  \u001B[36m[Optional]\u001B[0m Recurrence schedule (default: NONE)");
+        out.println("                               • Presets:   NONE, DAILY, WEEKLY, MONTHLY, YEARLY / ANNUAL");
+        out.println("                               • Intervals: 'every 45m', 'every 16h', 'every 2d', 'every 3mo', 'every 1y'");
+        out.println("                               • Units:     m (mins), h (hours), d (days), w (weeks), mo (months), y (years)");
+        out.println("  \u001B[1;37m--stages\u001B[0m          \u001B[36m[Optional]\u001B[0m Alert milestones before event (e.g. 14d,7d,3d,1d,2h,30m,0m)");
+        out.println("                               (0m = at target event time; auto-defaults by event type if omitted)");
+        out.println("  \u001B[1;37m--birth-year\u001B[0m      \u001B[36m[Optional]\u001B[0m Birth year (e.g. 1966) to auto-calculate milestone age in messages");
+        out.println("  \u001B[1;37m--notes\u001B[0m           \u001B[36m[Optional]\u001B[0m Freeform text, gift ideas, payment links, or instructions");
+        out.println("  \u001B[1;37m--id\u001B[0m              \u001B[36m[Optional]\u001B[0m Custom human-friendly ID (e.g. EVT-MOM-BDAY, default: auto-generated)\n");
+
+        out.println("\u001B[1;33mPOPULAR COPY-PASTE RECIPES:\u001B[0m");
+        out.println("  \u001B[1;32m# Birthday (Annual calendar recurrence + age calculation):\u001B[0m");
+        out.println("  sudo nx rem add --title \"Mom's Birthday\" --date 2026-11-25 --type BIRTHDAY --birth-year 1966\n");
+
+        out.println("  \u001B[1;32m# Monthly Bill (Recurs on the 5th of every month, calendar-anchored):\u001B[0m");
+        out.println("  sudo nx rem add --title \"AWS Hosting\" --date 2026-12-05 --time 09:00:00 --type BILL --recurrence \"1mo\" --stages 3d,1d,0m\n");
+
+        out.println("  \u001B[1;32m# Micro-Routine (Recurs every 45 minutes):\u001B[0m");
+        out.println("  sudo nx rem add --title \"Hydration Break\" --date 2026-11-24 --time 10:00:00 --recurrence \"every 45m\" --stages 0m\n");
+
+        out.println("  \u001B[1;32m# Shift Handover (Recurs every 16 hours):\u001B[0m");
+        out.println("  sudo nx rem add --title \"Shift Handover\" --date 2026-11-24 --time 18:00:00 --recurrence \"16h\" --stages 30m,0m\n");
+
+        out.println("  \u001B[1;32m# Multi-Day Maintenance (Recurs every 2 days):\u001B[0m");
+        out.println("  sudo nx rem add --title \"ZFS Scrub Check\" --date 2026-11-25 --time 03:00:00 --recurrence \"every 2d\"\n");
+
+        out.println("\u001B[1;36m================================================================================\u001B[0m");
     }
 
     private static String formatRelativeDays(LocalDate targetDate, ZoneId zone) {

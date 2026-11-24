@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -160,18 +161,38 @@ public class ReminderStorageManager {
 
             // 3. Determine Timezone
             ZoneId zone = req.timezone() != null ? req.timezone() : ZoneId.systemDefault();
+            ReminderRecurrence recurrence = req.recurrence() != null ? req.recurrence() : ReminderRecurrence.NONE;
 
-            // 4. Build stages
-            List<String> stageTokens = req.stages() != null && !req.stages().isEmpty()
-                    ? req.stages()
-                    : StageCalculator.getDefaultStages(req.type());
+            // 4. Anchor metadata (guarantees leap-year and month-end consistency)
+            Map<String, Object> meta = new LinkedHashMap<>(req.metadata() != null ? req.metadata() : Collections.emptyMap());
+            meta.putIfAbsent("anchorDate", req.targetDate().toString());
+            meta.putIfAbsent("anchorTime", (req.targetTime() != null ? req.targetTime() : LocalTime.of(9, 0)).toString());
+            meta.putIfAbsent("anchorDayOfMonth", req.targetDate().getDayOfMonth());
+            meta.putIfAbsent("anchorMonth", req.targetDate().getMonthValue());
+
+            // 5. Build stages
+            List<String> stageTokens = req.stages();
+            if (stageTokens == null || stageTokens.isEmpty()) {
+                if (recurrence.isSubDay()) {
+                    stageTokens = List.of("0m");
+                } else {
+                    stageTokens = StageCalculator.getDefaultStages(req.type());
+                }
+            }
 
             List<ReminderStage> stages = StageCalculator.buildStages(
                     stageTokens, req.targetDate(), req.targetTime(), zone, req.customStageMessages()
             );
 
-            // 5. Initial State
-            String cycle = String.valueOf(req.targetDate().getYear());
+            // 6. Initial State & Cycle
+            String cycle;
+            if (recurrence.isSubDay()) {
+                cycle = req.targetDate() + "T" + (req.targetTime() != null ? req.targetTime().toString().substring(0, 5) : "09:00");
+            } else if (recurrence.unit() == ReminderRecurrence.Unit.DAYS || recurrence.unit() == ReminderRecurrence.Unit.WEEKS) {
+                cycle = req.targetDate().toString();
+            } else {
+                cycle = String.valueOf(req.targetDate().getYear());
+            }
             String initialNextStage = stages.isEmpty() ? null : stages.get(0).stage();
             Instant initialNextTrigger = stages.isEmpty() ? null : stages.get(0).triggerAt();
             ReminderEventState state = ReminderEventState.initial(cycle, initialNextStage, initialNextTrigger);
@@ -185,8 +206,8 @@ public class ReminderStorageManager {
                     req.targetDate(),
                     req.targetTime(),
                     zone,
-                    req.recurrence() != null ? req.recurrence() : ReminderRecurrence.NONE,
-                    req.metadata() != null ? req.metadata() : Collections.emptyMap(),
+                    recurrence,
+                    meta,
                     stages,
                     state,
                     Collections.emptyList()

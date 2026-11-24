@@ -60,6 +60,7 @@ public class SchedulerRuntimeHints implements RuntimeHintsRegistrar {
                 ReminderStageStatus.class,
                 ReminderType.class,
                 ReminderRecurrence.class,
+                ReminderRecurrence.Unit.class,
                 ReminderHistoryEntry.class,
                 ReminderCreateRequest.class,
                 ReminderUpdateRequest.class,

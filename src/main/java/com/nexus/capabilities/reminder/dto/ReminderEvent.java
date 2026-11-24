@@ -48,11 +48,15 @@ public record ReminderEvent(
         );
     }
 
-    public ReminderEvent withArchivedCycle(ReminderHistoryEntry entry, LocalDate nextDate, List<ReminderStage> nextStages, ReminderEventState nextState) {
+    public ReminderEvent withArchivedCycle(ReminderHistoryEntry entry, LocalDate nextDate, LocalTime nextTime, List<ReminderStage> nextStages, ReminderEventState nextState) {
         List<ReminderHistoryEntry> updatedHistory = new java.util.ArrayList<>(history);
         updatedHistory.add(entry);
         return new ReminderEvent(
-                uuid, id, title, type, category, nextDate, targetTime, timezone, recurrence, metadata, nextStages, nextState, updatedHistory
+                uuid, id, title, type, category, nextDate, nextTime != null ? nextTime : targetTime, timezone, recurrence, metadata, nextStages, nextState, updatedHistory
         );
+    }
+
+    public ReminderEvent withArchivedCycle(ReminderHistoryEntry entry, LocalDate nextDate, List<ReminderStage> nextStages, ReminderEventState nextState) {
+        return withArchivedCycle(entry, nextDate, targetTime, nextStages, nextState);
     }
 }

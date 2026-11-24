@@ -79,13 +79,26 @@ public final class NexusCliHelpCustomizer {
             Map.entry("reminder", List.of(
                     "nx reminder list                   # View scheduled reminders & upcoming milestones",
                     "nx reminder next                   # Inspect immediate next reminder & countdown",
+                    "nx reminder template               # Show copy-pasteable template with all parameters",
                     "nx reminder add --title \"Mom's Birthday\" --date 2026-11-25 --type BIRTHDAY",
-                    "nx reminder add --title \"AWS Hosting Bill\" --date 2026-12-01 --stages 7d,3d,1d,0m --type BILL",
+                    "nx reminder add --title \"AWS Hosting\" --date 2026-12-05 --recurrence \"1mo\" --stages 3d,1d,0m",
+                    "nx reminder add --title \"Hydration\" --date 2026-11-24 --time 10:00:00 --recurrence \"every 45m\"",
                     "nx reminder show EVT-001           # Inspect stages, history, and systemd timer",
                     "nx reminder edit EVT-001 --time 10:00:00 --stages 3d,1d,0m",
                     "nx reminder delete EVT-001         # Remove reminder and delete systemd unit",
                     "nx reminder export reminders.json  # Backup all reminders to JSON",
                     "nx reminder import reminders.json  # Restore/merge reminders from backup"
+            )),
+            Map.entry("template", List.of(
+                    "nx reminder template               # View comprehensive template with all parameters",
+                    "nx reminder template > my-rem.sh   # Save template commands to file"
+            )),
+            Map.entry("add", List.of(
+                    "nx reminder add --example          # View full copy-pasteable command template",
+                    "sudo nx reminder add --title \"Alice's Birthday\" --date 2026-05-14 --type BIRTHDAY --birth-year 1995",
+                    "sudo nx reminder add --title \"Rent\" --date 2026-12-05 --time 09:00:00 --type BILL --recurrence \"1mo\" --stages 3d,1d,0m",
+                    "sudo nx reminder add --title \"Hydration\" --date 2026-11-24 --time 10:00:00 --recurrence \"every 45m\" --stages 0m",
+                    "sudo nx reminder add --title \"Shift Sync\" --date 2026-11-24 --time 18:00:00 --recurrence \"16h\" --stages 30m,0m"
             )),
             Map.entry("telegram", List.of(
                     "nx telegram send \"Backup finished!\"   # Broadcast text message",

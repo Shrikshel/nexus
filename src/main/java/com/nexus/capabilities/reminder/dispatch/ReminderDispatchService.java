@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
@@ -144,7 +146,7 @@ public class ReminderDispatchService {
                 deliveredStages
         );
 
-        if (event.recurrence() == ReminderRecurrence.NONE) {
+        if (event.recurrence().isNone()) {
             // One-off event completes
             ReminderEventState completedState = event.state().withCompleted();
             List<ReminderHistoryEntry> updatedHistory = new ArrayList<>(event.history());
@@ -161,7 +163,10 @@ public class ReminderDispatchService {
             log.info("One-off reminder {} marked COMPLETED. Timers disarmed.", event.id());
         } else {
             // Recurrence rollover!
-            LocalDate nextDate = event.recurrence().nextOccurrence(event.targetDate());
+            LocalDateTime nextDateTime = event.recurrence().nextOccurrence(event.targetDate(), event.targetTime(), event.metadata());
+            LocalDate nextDate = nextDateTime.toLocalDate();
+            LocalTime nextTime = nextDateTime.toLocalTime();
+
             List<String> stageTokens = event.stages().stream().map(ReminderStage::stage).toList();
 
             Map<String, String> customMsgs = new HashMap<>();
@@ -170,10 +175,18 @@ public class ReminderDispatchService {
             }
 
             List<ReminderStage> nextStages = StageCalculator.buildStages(
-                    stageTokens, nextDate, event.targetTime(), event.timezone(), customMsgs
+                    stageTokens, nextDate, nextTime, event.timezone(), customMsgs
             );
 
-            String nextCycle = String.valueOf(nextDate.getYear());
+            String nextCycle;
+            if (event.recurrence().isSubDay()) {
+                nextCycle = nextDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"));
+            } else if (event.recurrence().unit() == ReminderRecurrence.Unit.DAYS || event.recurrence().unit() == ReminderRecurrence.Unit.WEEKS) {
+                nextCycle = nextDate.format(DateTimeFormatter.ISO_LOCAL_DATE);
+            } else {
+                nextCycle = String.valueOf(nextDate.getYear());
+            }
+
             ReminderStage firstStage = nextStages.isEmpty() ? null : nextStages.get(0);
             ReminderEventState nextState = event.state().withNewCycle(
                     nextCycle,
@@ -181,11 +194,11 @@ public class ReminderDispatchService {
                     firstStage != null ? firstStage.triggerAt() : null
             );
 
-            ReminderEvent rolledOver = event.withArchivedCycle(historyEntry, nextDate, nextStages, nextState);
+            ReminderEvent rolledOver = event.withArchivedCycle(historyEntry, nextDate, nextTime, nextStages, nextState);
             storageManager.saveEvent(rolledOver);
             schedulerProvider.armTimer(rolledOver);
-            log.info("Rolled over recurring reminder {} to new date: {} (cycle: {})",
-                    event.id(), nextDate, nextCycle);
+            log.info("Rolled over recurring reminder {} to new date/time: {} {} (cycle: {})",
+                    event.id(), nextDate, nextTime, nextCycle);
         }
     }
 

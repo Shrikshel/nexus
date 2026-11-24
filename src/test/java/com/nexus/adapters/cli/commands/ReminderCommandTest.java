@@ -191,4 +191,23 @@ class ReminderCommandTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("Template subcommand outputs full copy-paste command guide")
+    void testTemplateSubcommand() {
+        int exitCode = commandLine.execute("template");
+        assertThat(exitCode).isEqualTo(0);
+        assertThat(outWriter.toString()).contains("Complete Copy-Paste Command Template");
+        assertThat(outWriter.toString()).contains("PARAMETER REFERENCE");
+        assertThat(outWriter.toString()).contains("POPULAR COPY-PASTE RECIPES");
+    }
+
+    @Test
+    @DisplayName("Add subcommand with --example flag prints template and exits 0")
+    void testAddWithExampleFlag() {
+        int exitCode = commandLine.execute("add", "--example");
+        assertThat(exitCode).isEqualTo(0);
+        assertThat(outWriter.toString()).contains("Complete Copy-Paste Command Template");
+        assertThat(outWriter.toString()).contains("--recurrence");
+    }
 }
