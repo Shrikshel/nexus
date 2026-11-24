@@ -586,4 +586,18 @@ class CliIntegrationTest {
         assertThat(output).contains("--flush");
         assertThat(output).contains("--list");
     }
+
+    @Test
+    @DisplayName("nexus tui --help displays usage and options")
+    void testTuiHelp() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CommandLine cmd = createCommandLine(out, err);
+
+        int exitCode = cmd.execute("tui", "--help");
+
+        assertThat(exitCode).isEqualTo(0);
+        String output = out.toString();
+        assertThat(output).contains("Usage: nexus tui");
+    }
 }

@@ -29,7 +29,8 @@ public final class NexusCliHelpCustomizer {
             new CommandGroup("CORE & SYSTEM", List.of(
                     new CommandEntry("system", "Host hardware, CPU, memory, OS audit, and privileged power"),
                     new CommandEntry("daemon", "Manage background agent service (install, start, stop, status)"),
-                    new CommandEntry("logs", "Stream and inspect centralized PM2-style application logs")
+                    new CommandEntry("logs", "Stream and inspect centralized PM2-style application logs"),
+                    new CommandEntry("tui", "Interactive Terminal User Interface dashboard (host, timers, reminders)")
             )),
             new CommandGroup("AUTOMATION & SERVICES", List.of(
                     new CommandEntry("timer", "Manage recurring timers and scripts (systemd, launchd, task scheduler)"),
@@ -71,6 +72,11 @@ public final class NexusCliHelpCustomizer {
                     "nx logs -f                         # Stream logs in real-time",
                     "nx logs --audit                    # Inspect security and command audit trail",
                     "nx logs --flush                    # Clear/truncate active log files"
+            )),
+            Map.entry("tui", List.of(
+                    "nx tui                             # Launch interactive terminal user interface",
+                    "nx dashboard                       # Alias to launch TUI dashboard",
+                    "nx ui                              # Alias to launch TUI"
             )),
             Map.entry("timer", List.of(
                     "nx timer list                      # View scheduled timers across all scopes",
