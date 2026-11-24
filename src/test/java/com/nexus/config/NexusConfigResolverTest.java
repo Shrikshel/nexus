@@ -106,4 +106,51 @@ class NexusConfigResolverTest {
 
         assertNull(NexusConfigResolver.normalize(null));
     }
+
+    @Test
+    void testVerboseRequestedFromCliArgs() {
+        assertTrue(NexusConfigResolver.isVerboseRequested(new String[]{"-v", "reminder", "list"}, null));
+        assertTrue(NexusConfigResolver.isVerboseRequested(new String[]{"reminder", "list", "--verbose"}, null));
+        assertTrue(NexusConfigResolver.isVerboseRequested(new String[]{"--debug"}, null));
+        assertFalse(NexusConfigResolver.isVerboseRequested(new String[]{"reminder", "list"}, null));
+    }
+
+    @Test
+    void testVerboseRequestedFromYamlConfig(@TempDir Path tempDir) throws IOException {
+        Path cfg = tempDir.resolve("verbose.yml");
+        Files.writeString(cfg, "nexus:\n  verbose: true\n");
+
+        assertTrue(NexusConfigResolver.isVerboseRequested(new String[]{"reminder", "list"}, cfg.toFile()));
+
+        Path cfgNormal = tempDir.resolve("normal.yml");
+        Files.writeString(cfgNormal, "nexus:\n  verbose: false\n");
+
+        assertFalse(NexusConfigResolver.isVerboseRequested(new String[]{"reminder", "list"}, cfgNormal.toFile()));
+    }
+
+    @Test
+    void testResolveConfiguredLogLevel(@TempDir Path tempDir) throws IOException {
+        Path cfg = tempDir.resolve("loglevel.yml");
+        Files.writeString(cfg, "nexus:\n  log-level: DEBUG\n");
+
+        assertEquals("DEBUG", NexusConfigResolver.resolveConfiguredLogLevel(cfg.toFile()));
+        assertTrue(NexusConfigResolver.isVerboseRequested(new String[]{"status"}, cfg.toFile()));
+
+        Path cfgWarn = tempDir.resolve("warn.yml");
+        Files.writeString(cfgWarn, "nexus:\n  log-level: WARN\n");
+        assertEquals("WARN", NexusConfigResolver.resolveConfiguredLogLevel(cfgWarn.toFile()));
+    }
+
+    @Test
+    void testReloadPropertiesWithVerboseAndLogLevel(@TempDir Path tempDir) throws IOException {
+        Path cfg = tempDir.resolve("verbose-props.yml");
+        Files.writeString(cfg, "nexus:\n  verbose: true\n  log-level: DEBUG\n");
+
+        NexusProperties props = new NexusProperties();
+        boolean success = NexusConfigResolver.reloadPropertiesFromYaml(cfg.toFile(), props);
+
+        assertTrue(success);
+        assertTrue(props.isVerbose());
+        assertEquals("DEBUG", props.getLogLevel());
+    }
 }

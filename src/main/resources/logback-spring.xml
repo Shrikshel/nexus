@@ -2,10 +2,12 @@
 <configuration>
     <!-- Fallback default is ${user.home}/.nexus/logs if nexus.log.dir system property is not set -->
     <property name="LOG_DIR" value="${nexus.log.dir:-${user.home}/.nexus/logs}" />
+    <property name="LOG_LEVEL" value="${nexus.log.level:-${logging.level.com.nexus:-INFO}}" />
+    <property name="CONSOLE_LEVEL" value="${nexus.console.level:-WARN}" />
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>WARN</level>
+            <level>${CONSOLE_LEVEL}</level>
         </filter>
         <encoder>
             <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
@@ -44,7 +46,7 @@
         <appender-ref ref="AUDIT_FILE"/>
     </logger>
 
-    <logger name="com.nexus" level="INFO" additivity="false">
+    <logger name="com.nexus" level="${LOG_LEVEL}" additivity="false">
         <appender-ref ref="APP_FILE"/>
         <appender-ref ref="CONSOLE"/>
     </logger>

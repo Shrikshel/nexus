@@ -30,6 +30,14 @@ public final class NexusConfigResolver {
               # Operational mode: cli or daemon
               mode: daemon
             
+              # Verbose / extensive debug logging (default: false)
+              # When false (default), routine CLI executions suppress startup banners and discovery noise.
+              # Set to true or run commands with -v / --verbose for detailed startup benchmarks and debug traces.
+              verbose: false
+
+              # Application log level: DEBUG, INFO, WARN, ERROR (default: INFO)
+              # log-level: INFO
+
               # Default execution timeout for capabilities (e.g. 30s, 60s, 2m)
               default-timeout: 30s
             
@@ -209,6 +217,15 @@ public final class NexusConfigResolver {
             if (nexusMap.containsKey("audit-enabled")) {
                 properties.setAuditEnabled(Boolean.parseBoolean(String.valueOf(nexusMap.get("audit-enabled"))));
             }
+            if (nexusMap.containsKey("verbose")) {
+                properties.setVerbose(Boolean.parseBoolean(String.valueOf(nexusMap.get("verbose"))));
+            }
+            if (nexusMap.containsKey("log-level") || nexusMap.containsKey("logLevel")) {
+                Object lvl = nexusMap.containsKey("log-level") ? nexusMap.get("log-level") : nexusMap.get("logLevel");
+                if (lvl != null && !String.valueOf(lvl).isBlank()) {
+                    properties.setLogLevel(String.valueOf(lvl).trim().toUpperCase());
+                }
+            }
 
             if (nexusMap.containsKey("log-dir") || nexusMap.containsKey("logDir")) {
                 Object logDirVal = nexusMap.containsKey("log-dir") ? nexusMap.get("log-dir") : nexusMap.get("logDir");
@@ -313,6 +330,77 @@ public final class NexusConfigResolver {
      */
     public static String getResolvedConfigPath() {
         return System.getProperty(PROPERTY_CONFIG_FILE);
+    }
+
+    /**
+     * Checks whether verbose logging was requested via CLI arguments (-v, --verbose, --debug),
+     * environment variables (NEXUS_VERBOSE=true, NEXUS_DEBUG=true), JVM system properties,
+     * or configuration file (nexus.verbose: true or log-level: DEBUG).
+     */
+    public static boolean isVerboseRequested(String[] args, File configFile) {
+        if (args != null) {
+            for (String arg : args) {
+                if ("-v".equals(arg) || "--verbose".equals(arg) || "--debug".equals(arg)) {
+                    return true;
+                }
+            }
+        }
+        String env = System.getenv("NEXUS_VERBOSE");
+        if ("true".equalsIgnoreCase(env) || "1".equals(env)) {
+            return true;
+        }
+        String envDebug = System.getenv("NEXUS_DEBUG");
+        if ("true".equalsIgnoreCase(envDebug) || "1".equals(envDebug)) {
+            return true;
+        }
+        if (Boolean.getBoolean("nexus.verbose") || Boolean.getBoolean("nexus.debug")) {
+            return true;
+        }
+        if (configFile != null && configFile.exists() && configFile.isFile()) {
+            try (InputStream is = new FileInputStream(configFile)) {
+                Yaml yaml = new Yaml();
+                Object loaded = yaml.load(is);
+                if (loaded instanceof Map<?, ?> rootMap) {
+                    Object nexusObj = rootMap.get("nexus");
+                    if (nexusObj instanceof Map<?, ?> nexusMap) {
+                        if (nexusMap.containsKey("verbose")) {
+                            return Boolean.parseBoolean(String.valueOf(nexusMap.get("verbose")));
+                        }
+                        if (nexusMap.containsKey("log-level") || nexusMap.containsKey("logLevel")) {
+                            String lvl = String.valueOf(nexusMap.containsKey("log-level") ? nexusMap.get("log-level") : nexusMap.get("logLevel")).trim();
+                            if ("DEBUG".equalsIgnoreCase(lvl) || "TRACE".equalsIgnoreCase(lvl)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        return false;
+    }
+
+    /**
+     * Extracts an explicitly configured log-level (e.g. DEBUG, INFO, WARN, ERROR) from the configuration file.
+     */
+    public static String resolveConfiguredLogLevel(File configFile) {
+        if (configFile != null && configFile.exists() && configFile.isFile()) {
+            try (InputStream is = new FileInputStream(configFile)) {
+                Yaml yaml = new Yaml();
+                Object loaded = yaml.load(is);
+                if (loaded instanceof Map<?, ?> rootMap) {
+                    Object nexusObj = rootMap.get("nexus");
+                    if (nexusObj instanceof Map<?, ?> nexusMap) {
+                        if (nexusMap.containsKey("log-level") || nexusMap.containsKey("logLevel")) {
+                            String lvl = String.valueOf(nexusMap.containsKey("log-level") ? nexusMap.get("log-level") : nexusMap.get("logLevel")).trim();
+                            if (!lvl.isBlank()) {
+                                return lvl.toUpperCase();
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        return null;
     }
 
     private static String extractConfigFileArgument(String[] args) {

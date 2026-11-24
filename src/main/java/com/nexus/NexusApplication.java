@@ -33,9 +33,24 @@ public class NexusApplication implements CommandLineRunner, ExitCodeGenerator {
         java.io.File resolvedConfigFile = com.nexus.config.NexusConfigResolver.resolveConfigFile(args);
         com.nexus.config.NexusConfigResolver.applySpringConfigProperties(resolvedConfigFile);
 
+        boolean verbose = com.nexus.config.NexusConfigResolver.isVerboseRequested(args, resolvedConfigFile);
+        if (verbose) {
+            System.setProperty("nexus.verbose", "true");
+            System.setProperty("nexus.log.level", "DEBUG");
+            System.setProperty("nexus.console.level", "DEBUG");
+            System.setProperty("logging.level.com.nexus", "DEBUG");
+        } else {
+            String cfgLogLevel = com.nexus.config.NexusConfigResolver.resolveConfiguredLogLevel(resolvedConfigFile);
+            if (cfgLogLevel != null) {
+                System.setProperty("nexus.log.level", cfgLogLevel);
+                System.setProperty("logging.level.com.nexus", cfgLogLevel);
+            }
+        }
+
         SpringApplication app = new SpringApplication(NexusApplication.class);
         app.setWebApplicationType(WebApplicationType.NONE);
         app.setBannerMode(org.springframework.boot.Banner.Mode.OFF);
+        app.setLogStartupInfo(verbose);
         int code = SpringApplication.exit(app.run(args));
         if (code != 0) {
             System.exit(code);

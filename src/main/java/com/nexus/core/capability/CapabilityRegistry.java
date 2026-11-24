@@ -25,7 +25,7 @@ public class CapabilityRegistry {
                 register(cap);
             }
         }
-        log.info("Initialized CapabilityRegistry with {} capabilities", capabilities.size());
+        log.debug("Initialized CapabilityRegistry with {} capabilities", capabilities.size());
     }
 
     public void register(Capability<?, ?> capability) {

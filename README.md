@@ -344,6 +344,30 @@ nexus logs --flush
 nexus logs --path
 ```
 
+##### Clean Logging & Extensive Verbose Mode
+By default, routine CLI commands (`nexus reminder ...`, `nexus status`, etc.) suppress Spring Boot startup banners, profile resolution logs, and internal component discovery noise in both console and `nexus.log`. Only actual operational events (timer arming/disarming, stage dispatches, rollover events, errors) are logged at `INFO`.
+
+Extensive/verbose debug logging can be dynamically enabled in three ways:
+
+1. **Per-Command CLI Flags**:
+   ```bash
+   nexus -v reminder list                  # Enables verbose output and sets logger to DEBUG
+   nexus reminder next --verbose
+   ```
+2. **Environment Variable**:
+   ```bash
+   export NEXUS_VERBOSE=true               # Enables verbose logs for all commands in this session
+   ```
+3. **YAML Configuration** (`/etc/nexus/config.yml` or `~/.nexus/config.yml`):
+   ```yaml
+   nexus:
+     # Set to true for extensive startup benchmarks, bean discovery, and debug traces
+     verbose: false
+
+     # Custom log level: DEBUG, INFO, WARN, ERROR (default: INFO)
+     log-level: INFO
+   ```
+
 #### 4. OpenZFS Storage Management
 ```bash
 # List all configured ZFS storage pools and health states

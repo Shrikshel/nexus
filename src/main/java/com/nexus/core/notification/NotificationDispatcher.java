@@ -28,7 +28,7 @@ public class NotificationDispatcher {
             t.setDaemon(true);
             return t;
         });
-        log.info("Initialized NotificationDispatcher with {} notification channels", this.channels.size());
+        log.debug("Initialized NotificationDispatcher with {} notification channels", this.channels.size());
     }
 
     public void dispatch(HostEvent event) {

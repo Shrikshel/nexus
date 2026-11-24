@@ -16,8 +16,26 @@ public class NexusProperties {
     private Duration defaultTimeout = Duration.ofSeconds(30);
     private boolean auditEnabled = true;
     private String logDir;
+    private boolean verbose = false;
+    private String logLevel = "INFO";
 
     private TelegramConfig telegram = new TelegramConfig();
+
+    public boolean isVerbose() {
+        return verbose;
+    }
+
+    public void setVerbose(boolean verbose) {
+        this.verbose = verbose;
+    }
+
+    public String getLogLevel() {
+        return logLevel;
+    }
+
+    public void setLogLevel(String logLevel) {
+        this.logLevel = logLevel;
+    }
 
     public String getLogDir() {
         return logDir;

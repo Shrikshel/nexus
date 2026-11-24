@@ -57,7 +57,7 @@ public class PackageManagerService {
             if (new File(path).canExecute()) {
                 cachedBinary = path;
                 cachedType = mapPathToType(path);
-                log.info("Detected system package manager: {} ({})", cachedType, cachedBinary);
+                log.debug("Detected system package manager: {} ({})", cachedType, cachedBinary);
                 return;
             }
         }
@@ -67,7 +67,7 @@ public class PackageManagerService {
             if (new File(brewPath).canExecute()) {
                 cachedBinary = brewPath;
                 cachedType = PackageManagerType.BREW;
-                log.info("Detected macOS Homebrew at: {}", cachedBinary);
+                log.debug("Detected macOS Homebrew at: {}", cachedBinary);
                 return;
             }
         }
@@ -79,7 +79,7 @@ public class PackageManagerService {
             if (bin != null) {
                 cachedBinary = bin;
                 cachedType = type;
-                log.info("Detected package manager in PATH: {} ({})", cachedType, cachedBinary);
+                log.debug("Detected package manager in PATH: {} ({})", cachedType, cachedBinary);
                 return;
             }
         }

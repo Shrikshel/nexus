@@ -26,7 +26,7 @@ public class DaemonServiceManager {
         for (DaemonServiceProvider p : providers) {
             if (p.isSupported()) {
                 this.activeProvider = p;
-                log.info("Initialized DaemonServiceManager with supervisor: {}", p.getPlatformName());
+                log.debug("Initialized DaemonServiceManager with supervisor: {}", p.getPlatformName());
                 break;
             }
         }
