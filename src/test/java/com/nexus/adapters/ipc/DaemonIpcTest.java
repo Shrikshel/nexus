@@ -109,4 +109,35 @@ class DaemonIpcTest {
         String response = client.sendCommand("RELOAD", TEST_PORT);
         assertThat(response).contains("\"reloaded\":true");
     }
+
+    @Test
+    @DisplayName("Unauthenticated client can query STATUS and PING on loopback without token")
+    void testUnauthenticatedClientCanPingAndGetStatus() throws Exception {
+        try (Socket socket = new Socket(InetAddress.getByName("127.0.0.1"), TEST_PORT);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true)) {
+
+            writer.println("STATUS");
+            String status = reader.readLine();
+            assertThat(status).contains("\"status\":\"RUNNING\"");
+            assertThat(status).contains("\"pid\":");
+
+            writer.println("PING");
+            String pong = reader.readLine();
+            assertThat(pong).isEqualTo("PONG");
+        }
+    }
+
+    @Test
+    @DisplayName("Unauthenticated client cannot execute privileged commands (STOP, RELOAD, INVOKE)")
+    void testUnauthenticatedClientCannotExecutePrivilegedCommands() throws Exception {
+        try (Socket socket = new Socket(InetAddress.getByName("127.0.0.1"), TEST_PORT);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+             PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true)) {
+
+            writer.println("STOP");
+            String resp = reader.readLine();
+            assertThat(resp).isEqualTo("ERROR: UNAUTHORIZED");
+        }
+    }
 }

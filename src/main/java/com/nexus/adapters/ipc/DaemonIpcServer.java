@@ -135,17 +135,28 @@ public class DaemonIpcServer {
              BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
              PrintWriter writer = new PrintWriter(new OutputStreamWriter(socket.getOutputStream()), true)) {
 
-            // Expect first line: AUTH <token>
-            String authLine = reader.readLine();
-            if (authLine == null || !authLine.startsWith("AUTH ") || !authLine.substring(5).trim().equals(authToken)) {
-                writer.println("ERROR: UNAUTHORIZED");
-                return;
-            }
-            writer.println("OK: AUTHENTICATED");
-
+            boolean authenticated = false;
             String line;
             while ((line = reader.readLine()) != null) {
                 String cmd = line.trim();
+                if (cmd.isEmpty()) {
+                    continue;
+                }
+
+                // Authentication handshake
+                if (cmd.startsWith("AUTH ")) {
+                    String provided = cmd.substring(5).trim();
+                    if (authToken != null && authToken.equals(provided)) {
+                        authenticated = true;
+                        writer.println("OK: AUTHENTICATED");
+                    } else {
+                        writer.println("ERROR: UNAUTHORIZED");
+                        return;
+                    }
+                    continue;
+                }
+
+                // Public read-only operational telemetry on local loopback (127.0.0.1)
                 if ("STATUS".equalsIgnoreCase(cmd)) {
                     Map<String, Object> status = Map.of(
                             "status", "RUNNING",
@@ -155,7 +166,19 @@ public class DaemonIpcServer {
                             "registeredCapabilities", registry.getAll().size()
                     );
                     writer.println(objectMapper.writeValueAsString(status));
-                } else if ("STOP".equalsIgnoreCase(cmd)) {
+                    continue;
+                } else if ("PING".equalsIgnoreCase(cmd)) {
+                    writer.println("PONG");
+                    continue;
+                }
+
+                // Privileged mutating / execution operations REQUIRE authentication
+                if (!authenticated) {
+                    writer.println("ERROR: UNAUTHORIZED");
+                    return;
+                }
+
+                if ("STOP".equalsIgnoreCase(cmd)) {
                     writer.println("OK: STOPPING");
                     new Thread(() -> {
                         try {
@@ -164,8 +187,6 @@ public class DaemonIpcServer {
                         } catch (InterruptedException ignored) {}
                     }).start();
                     break;
-                } else if ("PING".equalsIgnoreCase(cmd)) {
-                    writer.println("PONG");
                 } else if ("RELOAD".equalsIgnoreCase(cmd) || cmd.startsWith("RELOAD ") || "CONFIG_RELOAD".equalsIgnoreCase(cmd)) {
                     String customPath = cmd.contains(" ") ? cmd.substring(cmd.indexOf(' ') + 1).trim() : null;
                     try {
@@ -267,6 +288,21 @@ public class DaemonIpcServer {
 
             Path pidPath = dir.resolve("nexus.pid");
             Files.writeString(pidPath, String.valueOf(ProcessHandle.current().pid()));
+
+            // When running as root, also mirror runtime files to /root/.nexus/ so they survive /tmp flushes
+            if ("root".equalsIgnoreCase(System.getProperty("user.name"))) {
+                try {
+                    Path rootDir = Path.of("/root/.nexus");
+                    Files.createDirectories(rootDir);
+                    Path rootToken = rootDir.resolve("nexus.token");
+                    Files.writeString(rootToken, token);
+                    try {
+                        Files.setPosixFilePermissions(rootToken, PosixFilePermissions.fromString("rw-------"));
+                    } catch (UnsupportedOperationException ignored) {}
+                    Path rootPid = rootDir.resolve("nexus.pid");
+                    Files.writeString(rootPid, String.valueOf(ProcessHandle.current().pid()));
+                } catch (Exception ignored) {}
+            }
         } catch (Exception e) {
             log.warn("Could not write IPC runtime files: {}", e.getMessage());
         }
@@ -277,6 +313,13 @@ public class DaemonIpcServer {
             Path dir = getRuntimeDirectory();
             Files.deleteIfExists(dir.resolve("nexus.token"));
             Files.deleteIfExists(dir.resolve("nexus.pid"));
+
+            if ("root".equalsIgnoreCase(System.getProperty("user.name"))) {
+                try {
+                    Files.deleteIfExists(Path.of("/root/.nexus/nexus.token"));
+                    Files.deleteIfExists(Path.of("/root/.nexus/nexus.pid"));
+                } catch (Exception ignored) {}
+            }
         } catch (Exception e) {
             log.warn("Could not clean up IPC runtime files: {}", e.getMessage());
         }
