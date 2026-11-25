@@ -73,6 +73,9 @@ public class SystemScreen implements NexusTuiScreen {
     private final List<ProcessInfo> processes = new ArrayList<>();
     private ProcessListReport processReport;
 
+    private final java.util.concurrent.atomic.AtomicBoolean auditRunning = new java.util.concurrent.atomic.AtomicBoolean(false);
+    private final java.util.concurrent.atomic.AtomicBoolean processLoading = new java.util.concurrent.atomic.AtomicBoolean(false);
+
     private String toastMessage = null;
     private boolean toastIsError = false;
     private Instant toastTimestamp = null;
@@ -147,6 +150,66 @@ public class SystemScreen implements NexusTuiScreen {
         };
     }
 
+    public boolean isAuditRunning() {
+        return auditRunning.get();
+    }
+
+    public void triggerAuditAsync() {
+        if (auditCapability == null || !auditRunning.compareAndSet(false, true)) {
+            return;
+        }
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                ExecutionContext ctx = ExecutionContext.create(InvocationSource.CLI, Subject.localCli(), Duration.ofSeconds(15));
+                CapabilityResult<SystemAuditReport> res = auditCapability.execute(ctx, null);
+                if (res != null && res.payload() != null) {
+                    synchronized (SystemScreen.this) {
+                        this.auditReport = res.payload();
+                        auditChecks.clear();
+                        if (auditReport.checks() != null) {
+                            auditChecks.addAll(auditReport.checks());
+                        }
+                        toastMessage = "✔ System health audit complete (" + auditChecks.size() + " checks)";
+                        toastIsError = false;
+                        toastTimestamp = Instant.now();
+                    }
+                }
+            } catch (Exception e) {
+                synchronized (SystemScreen.this) {
+                    toastMessage = "❌ Health audit error: " + e.getMessage();
+                    toastIsError = true;
+                    toastTimestamp = Instant.now();
+                }
+            } finally {
+                auditRunning.set(false);
+            }
+        });
+    }
+
+    public void triggerProcessListAsync() {
+        if (processListCapability == null || !processLoading.compareAndSet(false, true)) {
+            return;
+        }
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                ExecutionContext ctx = ExecutionContext.create(InvocationSource.CLI, Subject.localCli(), Duration.ofSeconds(10));
+                CapabilityResult<ProcessListReport> res = processListCapability.execute(ctx, null);
+                if (res != null && res.payload() != null) {
+                    synchronized (SystemScreen.this) {
+                        this.processReport = res.payload();
+                        processes.clear();
+                        if (processReport.processes() != null) {
+                            processes.addAll(processReport.processes());
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+            } finally {
+                processLoading.set(false);
+            }
+        });
+    }
+
     @Override
     public synchronized void refresh() {
         // Refresh host info
@@ -171,34 +234,14 @@ public class SystemScreen implements NexusTuiScreen {
             fallbackLoadDisks();
         }
 
-        // Refresh audit report
-        if (auditCapability != null && (activeView == ViewMode.AUDIT || auditChecks.isEmpty())) {
-            try {
-                ExecutionContext ctx = ExecutionContext.create(InvocationSource.CLI, Subject.localCli(), Duration.ofSeconds(15));
-                CapabilityResult<SystemAuditReport> res = auditCapability.execute(ctx, null);
-                if (res != null && res.payload() != null) {
-                    this.auditReport = res.payload();
-                    auditChecks.clear();
-                    if (auditReport.checks() != null) {
-                        auditChecks.addAll(auditReport.checks());
-                    }
-                }
-            } catch (Exception ignored) {}
+        // Non-blocking trigger for background audit
+        if (auditCapability != null && auditChecks.isEmpty() && !auditRunning.get()) {
+            triggerAuditAsync();
         }
 
-        // Refresh processes
-        if (processListCapability != null && (activeView == ViewMode.PROCESSES || processes.isEmpty())) {
-            try {
-                ExecutionContext ctx = ExecutionContext.create(InvocationSource.CLI, Subject.localCli(), Duration.ofSeconds(10));
-                CapabilityResult<ProcessListReport> res = processListCapability.execute(ctx, null);
-                if (res != null && res.payload() != null) {
-                    this.processReport = res.payload();
-                    processes.clear();
-                    if (processReport.processes() != null) {
-                        processes.addAll(processReport.processes());
-                    }
-                }
-            } catch (Exception ignored) {}
+        // Non-blocking trigger for background process listing
+        if (processListCapability != null && processes.isEmpty() && !processLoading.get()) {
+            triggerProcessListAsync();
         }
 
         int max = getActiveItemCount();
@@ -373,6 +416,9 @@ public class SystemScreen implements NexusTuiScreen {
         int crit = auditReport != null ? auditReport.criticalCount() : 0;
 
         String boxTitle = String.format("System Health Audit [%s: %d pass, %d warn, %d crit]", status, pass, warn, crit);
+        if (auditRunning.get()) {
+            boxTitle += " [⠋ Evaluating in background...]";
+        }
         TextColor borderColor = "PASSED".equalsIgnoreCase(status) ? TextColor.ANSI.GREEN : TextColor.ANSI.YELLOW;
         TuiDrawingHelper.drawBox(tg, x, y, width, height, boxTitle, borderColor, TextColor.ANSI.WHITE_BRIGHT);
 
@@ -393,7 +439,11 @@ public class SystemScreen implements NexusTuiScreen {
 
         if (auditChecks.isEmpty()) {
             tg.setForegroundColor(TextColor.ANSI.WHITE);
-            tg.putString(x + 4, headerY + 2, "No audit checks loaded. Press [a] to trigger deep health audit.");
+            if (auditRunning.get()) {
+                tg.putString(x + 4, headerY + 2, "⠋ Evaluating system health in background (disks, memory, network, services)...");
+            } else {
+                tg.putString(x + 4, headerY + 2, "No audit checks loaded. Press [a] to trigger deep health audit.");
+            }
             return;
         }
 
@@ -461,7 +511,11 @@ public class SystemScreen implements NexusTuiScreen {
 
         if (processes.isEmpty()) {
             tg.setForegroundColor(TextColor.ANSI.WHITE);
-            tg.putString(x + 4, headerY + 2, "No processes loaded. Press [r] to inspect process tree.");
+            if (processLoading.get()) {
+                tg.putString(x + 4, headerY + 2, "⠋ Querying active processes in background...");
+            } else {
+                tg.putString(x + 4, headerY + 2, "No processes loaded. Press [r] to inspect process tree.");
+            }
             return;
         }
 
@@ -663,8 +717,8 @@ public class SystemScreen implements NexusTuiScreen {
         // Trigger deep audit
         if (type == KeyType.Character && (ch == 'a' || ch == 'A')) {
             setActiveView(ViewMode.AUDIT);
-            refresh();
-            toastMessage = "✔ System health audit executed (" + auditChecks.size() + " checks)";
+            triggerAuditAsync();
+            toastMessage = "⏳ Running deep system health audit in background...";
             toastIsError = false;
             toastTimestamp = Instant.now();
             return true;
@@ -672,7 +726,13 @@ public class SystemScreen implements NexusTuiScreen {
 
         // Refresh active view
         if (type == KeyType.Character && (ch == 'r' || ch == 'R')) {
-            refresh();
+            if (activeView == ViewMode.AUDIT) {
+                triggerAuditAsync();
+            } else if (activeView == ViewMode.PROCESSES) {
+                triggerProcessListAsync();
+            } else {
+                refresh();
+            }
             toastMessage = "Refreshed " + activeView.name() + " telemetry.";
             toastIsError = false;
             toastTimestamp = Instant.now();

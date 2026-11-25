@@ -103,11 +103,9 @@ class SystemScreenTest {
 
         screen.handleInput(new KeyStroke('v', false, false));
         assertThat(screen.getActiveView()).isEqualTo(SystemScreen.ViewMode.AUDIT);
-        assertThat(screen.getAuditChecks()).hasSize(2);
 
         screen.handleInput(new KeyStroke('v', false, false));
         assertThat(screen.getActiveView()).isEqualTo(SystemScreen.ViewMode.PROCESSES);
-        assertThat(screen.getProcesses()).hasSize(2);
 
         screen.handleInput(new KeyStroke('v', false, false));
         assertThat(screen.getActiveView()).isEqualTo(SystemScreen.ViewMode.DISKS);
@@ -119,7 +117,7 @@ class SystemScreenTest {
         boolean handled = screen.handleInput(new KeyStroke('a', false, false));
         assertThat(handled).isTrue();
         assertThat(screen.getActiveView()).isEqualTo(SystemScreen.ViewMode.AUDIT);
-        assertThat(screen.getToastMessage()).contains("audit executed");
+        assertThat(screen.getToastMessage()).contains("health audit");
     }
 
     @Test

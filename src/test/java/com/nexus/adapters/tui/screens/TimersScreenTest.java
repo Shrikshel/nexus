@@ -137,6 +137,28 @@ class TimersScreenTest {
     }
 
     @Test
+    @DisplayName("Pressing 'c' opens create timer modal and submitting creates timer")
+    void testCreateTimerModal() {
+        TimerInfo created = new TimerInfo("NX003", "nightly-sync", "nexus-nx003-nightly-sync", "hourly", "hourly",
+                "Desc", TimerScope.USER, "/tmp/s.sh", "/tmp/u.timer", "/tmp/u.service", true, "in 1h", "never", "N/A", Instant.now());
+        when(taskManager.createTimer(any(com.nexus.capabilities.scheduler.timer.dto.TimerCreateRequest.class)))
+                .thenReturn(new com.nexus.capabilities.scheduler.timer.dto.TimerCreateResult(true, created, "/tmp/s.sh", "/tmp/u.timer", "/tmp/u.service", "enable", "Success"));
+
+        // Press 'c' to open modal
+        screen.handleInput(new KeyStroke('c', false, false));
+        assertThat(screen.getActiveModal()).isNotNull();
+
+        // Fill modal fields and submit
+        screen.getActiveModal().setValue("name", "nightly-sync");
+        screen.getActiveModal().setValue("schedule", "hourly");
+        screen.handleInput(new KeyStroke(KeyType.Enter));
+
+        assertThat(screen.getActiveModal()).isNull();
+        verify(taskManager).createTimer(any(com.nexus.capabilities.scheduler.timer.dto.TimerCreateRequest.class));
+        assertThat(screen.getToastMessage()).contains("Created timer NX003");
+    }
+
+    @Test
     @DisplayName("Renders timer table and inspector on virtual terminal without error")
     void testRender() throws Exception {
         DefaultVirtualTerminal terminal = new DefaultVirtualTerminal(new TerminalSize(100, 30));

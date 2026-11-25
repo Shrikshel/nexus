@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -156,6 +157,50 @@ class RemindersScreenTest {
         screen.handleInput(new KeyStroke('n', false, false));
         assertThat(screen.isConfirmingDelete()).isFalse();
         assertThat(screen.getToastMessage()).contains("cancelled");
+    }
+
+    @Test
+    @DisplayName("Pressing 'c' opens create reminder modal and submitting creates reminder")
+    void testCreateReminderModal() {
+        ReminderEvent created = new ReminderEvent(
+                "uuid-new", "EVT-003", "Dental Checkup", ReminderType.EVENT, "Health",
+                LocalDate.of(2026, 12, 10), LocalTime.of(14, 0), ZoneId.of("UTC"),
+                ReminderRecurrence.NONE, Collections.emptyMap(),
+                List.of(), new ReminderEventState("2026", "ACTIVE", null, null, null), Collections.emptyList()
+        );
+        when(storageManager.createReminder(any())).thenReturn(created);
+
+        screen.handleInput(new KeyStroke('c', false, false));
+        assertThat(screen.getActiveModal()).isNotNull();
+
+        screen.getActiveModal().setValue("title", "Dental Checkup");
+        screen.handleInput(new KeyStroke(KeyType.Enter));
+
+        assertThat(screen.getActiveModal()).isNull();
+        verify(storageManager).createReminder(any());
+        assertThat(screen.getToastMessage()).contains("Created reminder EVT-003");
+    }
+
+    @Test
+    @DisplayName("Pressing 'e' opens edit reminder modal and submitting updates reminder")
+    void testEditReminderModal() {
+        ReminderEvent updated = new ReminderEvent(
+                "uuid-1", "EVT-001", "Mom's 60th Birthday", ReminderType.BIRTHDAY, "Family",
+                LocalDate.of(2026, 11, 25), LocalTime.of(9, 0), ZoneId.of("UTC"),
+                ReminderRecurrence.YEARLY, Collections.emptyMap(),
+                List.of(), new ReminderEventState("2026", "ACTIVE", null, null, null), Collections.emptyList()
+        );
+        when(storageManager.updateReminder(any())).thenReturn(java.util.Optional.of(updated));
+
+        screen.handleInput(new KeyStroke('e', false, false));
+        assertThat(screen.getActiveModal()).isNotNull();
+
+        screen.getActiveModal().setValue("title", "Mom's 60th Birthday");
+        screen.handleInput(new KeyStroke(KeyType.Enter));
+
+        assertThat(screen.getActiveModal()).isNull();
+        verify(storageManager).updateReminder(any());
+        assertThat(screen.getToastMessage()).contains("Updated reminder EVT-001");
     }
 
     @Test

@@ -8,6 +8,9 @@ import com.googlecode.lanterna.input.KeyStroke;
 import com.googlecode.lanterna.input.KeyType;
 import com.nexus.adapters.tui.NexusTuiScreen;
 import com.nexus.adapters.tui.TuiDrawingHelper;
+import com.nexus.adapters.tui.dialogs.TuiFormModal;
+import com.nexus.capabilities.scheduler.timer.dto.TimerCreateRequest;
+import com.nexus.capabilities.scheduler.timer.dto.TimerCreateResult;
 import com.nexus.capabilities.scheduler.timer.dto.TimerDeleteRequest;
 import com.nexus.capabilities.scheduler.timer.dto.TimerDeleteResult;
 import com.nexus.capabilities.scheduler.timer.dto.TimerInfo;
@@ -41,6 +44,7 @@ public class TimersScreen implements NexusTuiScreen {
 
     // Inline action and confirmation states
     private boolean confirmingDelete = false;
+    private TuiFormModal activeModal = null;
     private String toastMessage = null;
     private boolean toastIsError = false;
     private Instant toastTimestamp = null;
@@ -93,6 +97,14 @@ public class TimersScreen implements NexusTuiScreen {
 
     public String getToastMessage() {
         return toastMessage;
+    }
+
+    public TuiFormModal getActiveModal() {
+        return activeModal;
+    }
+
+    public void setActiveModal(TuiFormModal modal) {
+        this.activeModal = modal;
     }
 
     @Override
@@ -176,6 +188,11 @@ public class TimersScreen implements NexusTuiScreen {
         // Bottom Box: Timer Inspector & Details
         int inspectorY = bodyStart + tableHeight;
         renderInspectorPane(tg, 2, inspectorY, width - 4, inspectorHeight);
+
+        // Render modal overlay if active
+        if (activeModal != null) {
+            activeModal.render(tg, width + 4, size.getRows());
+        }
     }
 
     private void renderScopeSubBar(TextGraphics tg, int x, int y, int width) {
@@ -327,7 +344,7 @@ public class TimersScreen implements NexusTuiScreen {
             tg.clearModifiers();
         } else {
             tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
-            String actions = "[▲/▼ / j/k] Navigate  │  [x/Enter] Run Now  │  [d] Delete  │  [s] Scope  │  [r] Refresh";
+            String actions = "[▲/▼] Navigate  │  [c] Create  │  [x/Enter] Run  │  [d] Delete  │  [s] Scope  │  [r] Refresh";
             tg.putString(x + 2, promptY, TuiDrawingHelper.truncate(actions, width - 4));
         }
     }
@@ -344,6 +361,11 @@ public class TimersScreen implements NexusTuiScreen {
     @Override
     public synchronized boolean handleInput(KeyStroke key) {
         if (key == null) return false;
+
+        // Modal dialog interceptor
+        if (activeModal != null) {
+            return activeModal.handleInput(key);
+        }
 
         // Confirmation dialog interceptor
         if (confirmingDelete) {
@@ -411,6 +433,12 @@ public class TimersScreen implements NexusTuiScreen {
             toastIsError = false;
             toastTimestamp = Instant.now();
             refresh();
+            return true;
+        }
+
+        // Create timer modal
+        if (type == KeyType.Character && (ch == 'c' || ch == 'C')) {
+            openCreateTimerModal();
             return true;
         }
 
@@ -496,5 +524,68 @@ public class TimersScreen implements NexusTuiScreen {
         if (selectedIndex >= cachedTimers.size()) {
             selectedIndex = Math.max(0, cachedTimers.size() - 1);
         }
+    }
+
+    public void openCreateTimerModal() {
+        TuiFormModal modal = new TuiFormModal("Create Scheduled Timer");
+        modal.addField(TuiFormModal.FormField.text("name", "Name", ""));
+        modal.addField(TuiFormModal.FormField.text("schedule", "Schedule", "daily"));
+        modal.addField(TuiFormModal.FormField.text("description", "Description", ""));
+        modal.addField(TuiFormModal.FormField.options("scope", "Scope", List.of("USER", "SYSTEM"), 0));
+        modal.addField(TuiFormModal.FormField.text("command", "Command", "echo 'Running task'"));
+
+        modal.setOnCancel(() -> {
+            this.activeModal = null;
+            this.toastMessage = "Timer creation cancelled.";
+            this.toastIsError = false;
+            this.toastTimestamp = Instant.now();
+        });
+
+        modal.setOnSubmit(m -> {
+            String name = m.getValue("name");
+            String schedule = m.getValue("schedule");
+            String desc = m.getValue("description");
+            String scopeStr = m.getValue("scope");
+            String script = m.getValue("command");
+
+            if (name == null || name.isBlank()) {
+                m.setErrorMessage("Timer name cannot be empty.");
+                return;
+            }
+            if (schedule == null || schedule.isBlank()) {
+                m.setErrorMessage("Schedule cannot be empty (e.g. daily, hourly).");
+                return;
+            }
+
+            TimerScope scope = "SYSTEM".equalsIgnoreCase(scopeStr) ? TimerScope.SYSTEM : TimerScope.USER;
+
+            if (taskManager != null) {
+                try {
+                    TimerCreateRequest req = new TimerCreateRequest(name.trim(), schedule.trim(), desc, scope, script, false);
+                    TimerCreateResult res = taskManager.createTimer(req);
+                    if (res != null && res.success()) {
+                        this.activeModal = null;
+                        refresh();
+                        for (int idx = 0; idx < cachedTimers.size(); idx++) {
+                            if (name.trim().equalsIgnoreCase(cachedTimers.get(idx).name())) {
+                                selectedIndex = idx;
+                                break;
+                            }
+                        }
+                        this.toastMessage = "✔ Created timer " + (res.timer() != null ? res.timer().id() : name);
+                        this.toastIsError = false;
+                    } else {
+                        m.setErrorMessage(res != null && res.message() != null ? res.message() : "Creation failed");
+                    }
+                } catch (Exception ex) {
+                    m.setErrorMessage("Error: " + ex.getMessage());
+                }
+            } else {
+                m.setErrorMessage("ScheduledTaskManager unavailable");
+            }
+            this.toastTimestamp = Instant.now();
+        });
+
+        this.activeModal = modal;
     }
 }

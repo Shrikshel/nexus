@@ -85,11 +85,13 @@ class ReminderDispatchServiceTest {
     @Test
     @DisplayName("Synthesizes birthday age celebration message on 0m stage")
     void testBirthdayCelebrationMessage() {
+        LocalDate targetDate = LocalDate.now().plusDays(30);
+        int birthYear = targetDate.getYear() - 36;
         ReminderCreateRequest req = new ReminderCreateRequest(
                 "EVT-BDAY", "Alice's Birthday", ReminderType.BIRTHDAY, "FAMILY",
-                LocalDate.of(2026, 11, 25), LocalTime.of(9, 0), ZoneId.of("Asia/Kolkata"),
+                targetDate, LocalTime.of(9, 0), ZoneId.of("Asia/Kolkata"),
                 ReminderRecurrence.YEARLY, List.of("0m"), Collections.emptyMap(),
-                Map.of("birthYear", 1990)
+                Map.of("birthYear", birthYear)
         );
         storageManager.createReminder(req);
 

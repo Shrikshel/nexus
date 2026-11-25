@@ -8,17 +8,19 @@ import com.googlecode.lanterna.input.KeyStroke;
 import com.googlecode.lanterna.input.KeyType;
 import com.nexus.adapters.tui.NexusTuiScreen;
 import com.nexus.adapters.tui.TuiDrawingHelper;
+import com.nexus.adapters.tui.dialogs.TuiFormModal;
 import com.nexus.capabilities.reminder.dispatch.ReminderDispatchService;
-import com.nexus.capabilities.reminder.dto.ReminderEvent;
-import com.nexus.capabilities.reminder.dto.ReminderStage;
-import com.nexus.capabilities.reminder.dto.ReminderStageStatus;
-import com.nexus.capabilities.reminder.dto.ReminderType;
+import com.nexus.capabilities.reminder.dto.*;
 import com.nexus.capabilities.reminder.storage.ReminderStorageManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -54,6 +56,7 @@ public class RemindersScreen implements NexusTuiScreen {
 
     // Inline action and confirmation states
     private boolean confirmingDelete = false;
+    private TuiFormModal activeModal = null;
     private String toastMessage = null;
     private boolean toastIsError = false;
     private Instant toastTimestamp = null;
@@ -106,6 +109,14 @@ public class RemindersScreen implements NexusTuiScreen {
 
     public String getToastMessage() {
         return toastMessage;
+    }
+
+    public TuiFormModal getActiveModal() {
+        return activeModal;
+    }
+
+    public void setActiveModal(TuiFormModal modal) {
+        this.activeModal = modal;
     }
 
     @Override
@@ -164,6 +175,11 @@ public class RemindersScreen implements NexusTuiScreen {
         // Bottom Box: Reminder Inspector & Stages Details
         int inspectorY = bodyStart + tableHeight;
         renderInspectorPane(tg, 2, inspectorY, width - 4, inspectorHeight);
+
+        // Render modal overlay if active
+        if (activeModal != null) {
+            activeModal.render(tg, width + 4, size.getRows());
+        }
     }
 
     private void renderFilterSubBar(TextGraphics tg, int x, int y, int width) {
@@ -344,7 +360,7 @@ public class RemindersScreen implements NexusTuiScreen {
             tg.clearModifiers();
         } else {
             tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
-            String actions = "[▲/▼ / j/k] Navigate  │  [t] Test Alert  │  [x/Enter] Dispatch Stage  │  [d] Delete  │  [f] Filter  │  [r] Refresh";
+            String actions = "[▲/▼] Navigate  │  [c] Create  │  [e] Edit  │  [t] Test Alert  │  [x] Dispatch  │  [d] Delete  │  [f] Filter";
             tg.putString(x + 2, promptY, TuiDrawingHelper.truncate(actions, width - 4));
         }
     }
@@ -372,6 +388,11 @@ public class RemindersScreen implements NexusTuiScreen {
     @Override
     public synchronized boolean handleInput(KeyStroke key) {
         if (key == null) return false;
+
+        // Modal dialog interceptor
+        if (activeModal != null) {
+            return activeModal.handleInput(key);
+        }
 
         // Confirmation dialog interceptor
         if (confirmingDelete) {
@@ -435,6 +456,18 @@ public class RemindersScreen implements NexusTuiScreen {
             toastMessage = "Filter: " + currentFilter.name();
             toastIsError = false;
             toastTimestamp = Instant.now();
+            return true;
+        }
+
+        // Create reminder modal
+        if (type == KeyType.Character && (ch == 'c' || ch == 'C')) {
+            openCreateReminderModal();
+            return true;
+        }
+
+        // Edit reminder modal
+        if (type == KeyType.Character && (ch == 'e' || ch == 'E')) {
+            openEditReminderModal();
             return true;
         }
 
@@ -551,5 +584,191 @@ public class RemindersScreen implements NexusTuiScreen {
         if (selectedIndex >= filteredReminders.size()) {
             selectedIndex = Math.max(0, filteredReminders.size() - 1);
         }
+    }
+
+    public void openCreateReminderModal() {
+        TuiFormModal modal = new TuiFormModal("Create Milestone Reminder");
+        modal.addField(TuiFormModal.FormField.text("title", "Title", ""));
+        modal.addField(TuiFormModal.FormField.options("type", "Type", List.of("BIRTHDAY", "BILL", "EVENT", "TASK"), 0));
+        modal.addField(TuiFormModal.FormField.text("date", "Target Date", LocalDate.now().plusDays(1).toString()));
+        modal.addField(TuiFormModal.FormField.text("time", "Target Time", "09:00"));
+        modal.addField(TuiFormModal.FormField.options("recur", "Recurrence", List.of("NONE", "daily", "1w", "1mo", "1y"), 0));
+        modal.addField(TuiFormModal.FormField.text("stages", "Alert Stages", "7d,3d,1d,0m"));
+
+        modal.setOnCancel(() -> {
+            this.activeModal = null;
+            this.toastMessage = "Reminder creation cancelled.";
+            this.toastIsError = false;
+            this.toastTimestamp = Instant.now();
+        });
+
+        modal.setOnSubmit(m -> {
+            String title = m.getValue("title");
+            String typeStr = m.getValue("type");
+            String dateStr = m.getValue("date");
+            String timeStr = m.getValue("time");
+            String recurStr = m.getValue("recur");
+            String stagesStr = m.getValue("stages");
+
+            if (title == null || title.isBlank()) {
+                m.setErrorMessage("Title cannot be empty.");
+                return;
+            }
+
+            LocalDate targetDate;
+            try {
+                targetDate = LocalDate.parse(dateStr.trim());
+            } catch (Exception e) {
+                m.setErrorMessage("Invalid date format (use YYYY-MM-DD).");
+                return;
+            }
+
+            LocalTime targetTime;
+            try {
+                targetTime = LocalTime.parse(timeStr.trim());
+            } catch (Exception e) {
+                m.setErrorMessage("Invalid time format (use HH:mm).");
+                return;
+            }
+
+            ReminderType rType = ReminderType.valueOf(typeStr);
+            ReminderRecurrence recur = "NONE".equalsIgnoreCase(recurStr) ? ReminderRecurrence.NONE : ReminderRecurrence.fromString(recurStr);
+            List<String> stageList = Arrays.stream(stagesStr.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+
+            if (stageList.isEmpty()) {
+                m.setErrorMessage("At least one alert stage is required (e.g. 0m).");
+                return;
+            }
+
+            if (storageManager != null) {
+                try {
+                    ReminderCreateRequest req = new ReminderCreateRequest(
+                            null, title.trim(), rType, "General", targetDate, targetTime,
+                            ZoneId.systemDefault(), recur, stageList, null, null
+                    );
+                    ReminderEvent created = storageManager.createReminder(req);
+                    if (created != null) {
+                        this.activeModal = null;
+                        refresh();
+                        for (int idx = 0; idx < filteredReminders.size(); idx++) {
+                            if (created.id().equals(filteredReminders.get(idx).id())) {
+                                selectedIndex = idx;
+                                break;
+                            }
+                        }
+                        this.toastMessage = "✔ Created reminder " + created.id() + " (" + created.title() + ")";
+                        this.toastIsError = false;
+                    } else {
+                        m.setErrorMessage("Creation failed in storage");
+                    }
+                } catch (Exception ex) {
+                    m.setErrorMessage("Error: " + ex.getMessage());
+                }
+            } else {
+                m.setErrorMessage("ReminderStorageManager unavailable");
+            }
+            this.toastTimestamp = Instant.now();
+        });
+
+        this.activeModal = modal;
+    }
+
+    public void openEditReminderModal() {
+        if (filteredReminders.isEmpty() || selectedIndex < 0 || selectedIndex >= filteredReminders.size()) {
+            return;
+        }
+        ReminderEvent existing = filteredReminders.get(selectedIndex);
+
+        TuiFormModal modal = new TuiFormModal("Edit Reminder: " + existing.id());
+        modal.addField(TuiFormModal.FormField.text("title", "Title", existing.title()));
+
+        List<String> typeList = List.of("BIRTHDAY", "BILL", "EVENT", "TASK");
+        int typeIdx = existing.type() != null ? typeList.indexOf(existing.type().name()) : 0;
+        modal.addField(TuiFormModal.FormField.options("type", "Type", typeList, Math.max(0, typeIdx)));
+
+        modal.addField(TuiFormModal.FormField.text("date", "Target Date", existing.targetDate() != null ? existing.targetDate().toString() : ""));
+        modal.addField(TuiFormModal.FormField.text("time", "Target Time", existing.targetTime() != null ? existing.targetTime().toString() : "09:00"));
+
+        List<String> recurList = List.of("NONE", "daily", "1w", "1mo", "1y");
+        String curRecur = (existing.recurrence() != null && !existing.recurrence().isNone()) ? existing.recurrence().format() : "NONE";
+        int recurIdx = recurList.indexOf(curRecur);
+        modal.addField(TuiFormModal.FormField.options("recur", "Recurrence", recurList, Math.max(0, recurIdx)));
+
+        String existingStages = existing.stages() != null
+                ? existing.stages().stream().map(ReminderStage::stage).collect(Collectors.joining(","))
+                : "0m";
+        modal.addField(TuiFormModal.FormField.text("stages", "Alert Stages", existingStages));
+
+        modal.setOnCancel(() -> {
+            this.activeModal = null;
+            this.toastMessage = "Edit cancelled.";
+            this.toastIsError = false;
+            this.toastTimestamp = Instant.now();
+        });
+
+        modal.setOnSubmit(m -> {
+            String title = m.getValue("title");
+            String typeStr = m.getValue("type");
+            String dateStr = m.getValue("date");
+            String timeStr = m.getValue("time");
+            String recurStr = m.getValue("recur");
+            String stagesStr = m.getValue("stages");
+
+            if (title == null || title.isBlank()) {
+                m.setErrorMessage("Title cannot be empty.");
+                return;
+            }
+
+            LocalDate targetDate;
+            try {
+                targetDate = LocalDate.parse(dateStr.trim());
+            } catch (Exception e) {
+                m.setErrorMessage("Invalid date format (use YYYY-MM-DD).");
+                return;
+            }
+
+            LocalTime targetTime;
+            try {
+                targetTime = LocalTime.parse(timeStr.trim());
+            } catch (Exception e) {
+                m.setErrorMessage("Invalid time format (use HH:mm).");
+                return;
+            }
+
+            ReminderType rType = ReminderType.valueOf(typeStr);
+            ReminderRecurrence recur = "NONE".equalsIgnoreCase(recurStr) ? ReminderRecurrence.NONE : ReminderRecurrence.fromString(recurStr);
+            List<String> stageList = Arrays.stream(stagesStr.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .toList();
+
+            if (storageManager != null) {
+                try {
+                    ReminderUpdateRequest req = new ReminderUpdateRequest(
+                            existing.id(), title.trim(), rType, existing.category(), targetDate, targetTime,
+                            existing.timezone(), recur, stageList, null, null
+                    );
+                    var updated = storageManager.updateReminder(req);
+                    if (updated.isPresent()) {
+                        this.activeModal = null;
+                        refresh();
+                        this.toastMessage = "✔ Updated reminder " + existing.id();
+                        this.toastIsError = false;
+                    } else {
+                        m.setErrorMessage("Update failed in storage");
+                    }
+                } catch (Exception ex) {
+                    m.setErrorMessage("Error: " + ex.getMessage());
+                }
+            } else {
+                m.setErrorMessage("ReminderStorageManager unavailable");
+            }
+            this.toastTimestamp = Instant.now();
+        });
+
+        this.activeModal = modal;
     }
 }
