@@ -29,4 +29,11 @@ public interface NexusTuiScreen {
      * Re-fetches or refreshes underlying state from services.
      */
     default void refresh() {}
+
+    /**
+     * Contextual hotkey shortcuts summary displayed in the persistent bottom status bar.
+     */
+    default String getActionShortcuts() {
+        return "";
+    }
 }

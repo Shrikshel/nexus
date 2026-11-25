@@ -159,6 +159,17 @@ class TimersScreenTest {
     }
 
     @Test
+    @DisplayName("Modal cancellation closes modal cleanly without clearing action shortcuts")
+    void testModalCancellationKeepsActions() {
+        screen.handleInput(new KeyStroke('c', false, false));
+        assertThat(screen.getActiveModal()).isNotNull();
+
+        screen.handleInput(new KeyStroke(KeyType.Escape));
+        assertThat(screen.getActiveModal()).isNull();
+        assertThat(screen.getActionShortcuts()).contains("[c] Create");
+    }
+
+    @Test
     @DisplayName("Renders timer table and inspector on virtual terminal without error")
     void testRender() throws Exception {
         DefaultVirtualTerminal terminal = new DefaultVirtualTerminal(new TerminalSize(100, 30));

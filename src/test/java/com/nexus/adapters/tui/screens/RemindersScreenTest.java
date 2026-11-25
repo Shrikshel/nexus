@@ -204,6 +204,33 @@ class RemindersScreenTest {
     }
 
     @Test
+    @DisplayName("Modal cancellation cleanly closes active modal without overwriting action shortcuts")
+    void testModalCancellationKeepsActions() {
+        screen.handleInput(new KeyStroke('e', false, false));
+        assertThat(screen.getActiveModal()).isNotNull();
+
+        screen.handleInput(new KeyStroke(KeyType.Escape));
+        assertThat(screen.getActiveModal()).isNull();
+        assertThat(screen.getActionShortcuts()).contains("[e] Edit");
+    }
+
+    @Test
+    @DisplayName("Dispatching an already completed reminder shows informative toast")
+    void testDispatchCompletedReminder() {
+        ReminderEvent completed = new ReminderEvent(
+                "uuid-c", "EVT-999", "Old Event", ReminderType.EVENT, "General",
+                LocalDate.of(2026, 11, 20), LocalTime.of(9, 0), ZoneId.of("UTC"),
+                ReminderRecurrence.NONE, Collections.emptyMap(),
+                List.of(), new ReminderEventState("2026", "COMPLETED", "0m", null, null), Collections.emptyList()
+        );
+        when(storageManager.loadAll()).thenReturn(List.of(completed));
+        screen.refresh();
+
+        screen.handleInput(new KeyStroke(KeyType.Enter));
+        assertThat(screen.getToastMessage()).contains("already COMPLETED");
+    }
+
+    @Test
     @DisplayName("Renders reminder table and inspector on virtual terminal without error")
     void testRender() throws Exception {
         DefaultVirtualTerminal terminal = new DefaultVirtualTerminal(new TerminalSize(100, 30));

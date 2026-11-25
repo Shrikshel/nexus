@@ -247,26 +247,41 @@ public class NexusTuiLauncher {
         tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
         tg.putString(0, height - 2, "─".repeat(Math.max(0, width)));
 
-        tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT);
-        tg.enableModifiers(SGR.BOLD);
-        tg.putString(2, height - 1, "[Tab / 1-4]");
-        tg.clearModifiers();
-        tg.setForegroundColor(TextColor.ANSI.WHITE);
-        tg.putString(14, height - 1, "Switch Screen  │");
+        String shortcuts = (currentScreenIndex < screens.size()) ? screens.get(currentScreenIndex).getActionShortcuts() : "";
+        int col = 2;
+        if (shortcuts != null && !shortcuts.isBlank() && width > 70) {
+            tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT);
+            tg.putString(col, height - 1, shortcuts);
+            col += shortcuts.length() + 1;
+            tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
+            tg.putString(col, height - 1, " │ ");
+            col += 3;
+        }
 
-        tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT);
+        tg.setForegroundColor(TextColor.ANSI.CYAN_BRIGHT);
         tg.enableModifiers(SGR.BOLD);
-        tg.putString(32, height - 1, "[r]");
+        tg.putString(col, height - 1, "[Tab / 1-4]");
         tg.clearModifiers();
         tg.setForegroundColor(TextColor.ANSI.WHITE);
-        tg.putString(36, height - 1, "Refresh  │");
+        tg.putString(col + 12, height - 1, "Screen  │");
+        col += 22;
 
-        tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT);
+        if (width >= col + 24) {
+            tg.setForegroundColor(TextColor.ANSI.CYAN_BRIGHT);
+            tg.enableModifiers(SGR.BOLD);
+            tg.putString(col, height - 1, "[r]");
+            tg.clearModifiers();
+            tg.setForegroundColor(TextColor.ANSI.WHITE);
+            tg.putString(col + 4, height - 1, "Refresh  │");
+            col += 14;
+        }
+
+        tg.setForegroundColor(TextColor.ANSI.CYAN_BRIGHT);
         tg.enableModifiers(SGR.BOLD);
-        tg.putString(48, height - 1, "[q / ESC]");
+        tg.putString(col, height - 1, "[q / ESC]");
         tg.clearModifiers();
         tg.setForegroundColor(TextColor.ANSI.WHITE);
-        tg.putString(58, height - 1, "Quit");
+        tg.putString(col + 10, height - 1, "Quit");
 
         try {
             screen.refresh();

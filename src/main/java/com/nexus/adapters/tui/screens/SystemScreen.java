@@ -105,6 +105,11 @@ public class SystemScreen implements NexusTuiScreen {
         return "4: System";
     }
 
+    @Override
+    public String getActionShortcuts() {
+        return "[▲/▼ / j/k] Nav  │  [v] Sub-View  │  [a] Deep Audit  │  [r] Refresh";
+    }
+
     public ViewMode getActiveView() {
         return activeView;
     }
@@ -212,6 +217,11 @@ public class SystemScreen implements NexusTuiScreen {
 
     @Override
     public synchronized void refresh() {
+        if (toastTimestamp != null && java.time.Duration.between(toastTimestamp, Instant.now()).getSeconds() >= 4) {
+            toastMessage = null;
+            toastTimestamp = null;
+        }
+
         // Refresh host info
         if (systemCollector != null) {
             try {
@@ -585,18 +595,19 @@ public class SystemScreen implements NexusTuiScreen {
             case PROCESSES -> renderProcessesInspector(tg, x + 2, currY, width - 4, height);
         }
 
-        // Action hints on prompt row
+        int toastY = y + height - 3;
         int promptY = y + height - 2;
+
         if (toastMessage != null) {
             tg.setForegroundColor(toastIsError ? TextColor.ANSI.RED_BRIGHT : TextColor.ANSI.GREEN_BRIGHT);
             tg.enableModifiers(SGR.BOLD);
-            tg.putString(x + 2, promptY, TuiDrawingHelper.truncate(toastMessage, width - 4));
+            tg.putString(x + 2, toastY, TuiDrawingHelper.truncate(toastMessage, width - 4));
             tg.clearModifiers();
-        } else {
-            tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
-            String actions = "[▲/▼ / j/k] Navigate  │  [v] Switch Sub-View  │  [r] Refresh  │  [a] Run Deep Audit";
-            tg.putString(x + 2, promptY, TuiDrawingHelper.truncate(actions, width - 4));
         }
+
+        tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT);
+        String actions = "[▲/▼ / j/k] Navigate  │  [v] Switch Sub-View  │  [r] Refresh  │  [a] Run Deep Audit";
+        tg.putString(x + 2, promptY, TuiDrawingHelper.truncate(actions, width - 4));
     }
 
     private void renderDisksInspector(TextGraphics tg, int x, int y, int width, int height) {

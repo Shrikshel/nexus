@@ -68,6 +68,11 @@ public class TimersScreen implements NexusTuiScreen {
         return "2: Timers";
     }
 
+    @Override
+    public String getActionShortcuts() {
+        return "[▲/▼] Nav  │  [c] Create  │  [x/Enter] Run  │  [d] Delete  │  [s] Scope  │  [r] Refresh";
+    }
+
     public TimerScope getCurrentScope() {
         return currentScope;
     }
@@ -109,6 +114,11 @@ public class TimersScreen implements NexusTuiScreen {
 
     @Override
     public synchronized void refresh() {
+        if (toastTimestamp != null && java.time.Duration.between(toastTimestamp, Instant.now()).getSeconds() >= 4) {
+            toastMessage = null;
+            toastTimestamp = null;
+        }
+
         cachedTimers.clear();
         if (taskManager != null) {
             try {
@@ -310,41 +320,45 @@ public class TimersScreen implements NexusTuiScreen {
 
         if (selected == null) {
             tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
-            tg.putString(x + 4, y + 2, "No timer selected. Press [s] to toggle scope or add a timer via CLI.");
-            return;
+            tg.putString(x + 4, y + 2, "No timer selected. Press [c] to create or [s] to toggle scope.");
+        } else {
+            int currY = y + 1;
+            drawInspectorLine(tg, x + 2, currY++, "Description:", selected.description() != null ? selected.description() : "No description provided", width - 4);
+            drawInspectorLine(tg, x + 2, currY++, "Schedule:", (selected.schedule() != null ? selected.schedule() : "") + (selected.scheduleDetails() != null ? " (" + selected.scheduleDetails() + ")" : ""), width - 4);
+
+            String runSummary = "Next: " + (selected.nextRun() != null ? selected.nextRun() : "N/A") + "  │  Last: " + (selected.lastRun() != null ? selected.lastRun() : "Never") + " [" + (selected.lastResult() != null ? selected.lastResult() : "N/A") + "]";
+            drawInspectorLine(tg, x + 2, currY++, "Runs:", runSummary, width - 4);
+
+            if (height >= 7) {
+                drawInspectorLine(tg, x + 2, currY++, "Script Path:", selected.scriptPath() != null ? selected.scriptPath() : "N/A", width - 4);
+            }
+            if (height >= 8 && selected.unitPath() != null) {
+                drawInspectorLine(tg, x + 2, currY++, "Unit File:", selected.unitPath(), width - 4);
+            }
         }
 
-        int currY = y + 1;
-        drawInspectorLine(tg, x + 2, currY++, "Description:", selected.description() != null ? selected.description() : "No description provided", width - 4);
-        drawInspectorLine(tg, x + 2, currY++, "Schedule:", (selected.schedule() != null ? selected.schedule() : "") + (selected.scheduleDetails() != null ? " (" + selected.scheduleDetails() + ")" : ""), width - 4);
-
-        String runSummary = "Next: " + (selected.nextRun() != null ? selected.nextRun() : "N/A") + "  │  Last: " + (selected.lastRun() != null ? selected.lastRun() : "Never") + " [" + (selected.lastResult() != null ? selected.lastResult() : "N/A") + "]";
-        drawInspectorLine(tg, x + 2, currY++, "Runs:", runSummary, width - 4);
-
-        if (height >= 7) {
-            drawInspectorLine(tg, x + 2, currY++, "Script Path:", selected.scriptPath() != null ? selected.scriptPath() : "N/A", width - 4);
-        }
-        if (height >= 8 && selected.unitPath() != null) {
-            drawInspectorLine(tg, x + 2, currY++, "Unit File:", selected.unitPath(), width - 4);
-        }
-
-        // Status action prompt / toast notification at bottom of inspector box
+        int toastY = y + height - 3;
         int promptY = y + height - 2;
-        if (confirmingDelete) {
+
+        if (confirmingDelete && selected != null) {
             tg.setBackgroundColor(TextColor.ANSI.RED);
             tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT);
             tg.enableModifiers(SGR.BOLD);
             tg.putString(x + 2, promptY, " ⚠ CONFIRM DELETE: Remove timer " + selected.id() + "? [y] Confirm  [n/ESC] Cancel ");
             tg.clearModifiers();
             tg.setBackgroundColor(TextColor.ANSI.DEFAULT);
-        } else if (toastMessage != null) {
-            tg.setForegroundColor(toastIsError ? TextColor.ANSI.RED_BRIGHT : TextColor.ANSI.GREEN_BRIGHT);
-            tg.enableModifiers(SGR.BOLD);
-            tg.putString(x + 2, promptY, TuiDrawingHelper.truncate(toastMessage, width - 4));
-            tg.clearModifiers();
         } else {
-            tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
-            String actions = "[▲/▼] Navigate  │  [c] Create  │  [x/Enter] Run  │  [d] Delete  │  [s] Scope  │  [r] Refresh";
+            if (toastMessage != null) {
+                tg.setForegroundColor(toastIsError ? TextColor.ANSI.RED_BRIGHT : TextColor.ANSI.GREEN_BRIGHT);
+                tg.enableModifiers(SGR.BOLD);
+                tg.putString(x + 2, toastY, TuiDrawingHelper.truncate(toastMessage, width - 4));
+                tg.clearModifiers();
+            }
+
+            tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT);
+            String actions = (selected != null)
+                    ? "[▲/▼] Navigate  │  [c] Create  │  [x/Enter] Run  │  [d] Delete  │  [s] Scope  │  [r] Refresh"
+                    : "[c] Create Timer  │  [s] Toggle Scope  │  [r] Refresh";
             tg.putString(x + 2, promptY, TuiDrawingHelper.truncate(actions, width - 4));
         }
     }
@@ -536,9 +550,6 @@ public class TimersScreen implements NexusTuiScreen {
 
         modal.setOnCancel(() -> {
             this.activeModal = null;
-            this.toastMessage = "Timer creation cancelled.";
-            this.toastIsError = false;
-            this.toastTimestamp = Instant.now();
         });
 
         modal.setOnSubmit(m -> {

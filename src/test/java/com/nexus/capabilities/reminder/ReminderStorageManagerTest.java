@@ -254,4 +254,12 @@ class ReminderStorageManagerTest {
         assertThat(reconciled.stages().get(1).status()).isEqualTo(ReminderStageStatus.PENDING);
         assertThat(reconciled.state().nextStage()).isEqualTo("1h");
     }
+
+    @Test
+    @DisplayName("Resolves default user storage path under user.home for non-root users")
+    void testResolveStoragePathForUser() {
+        ReminderStorageManager sm = new ReminderStorageManager();
+        Path resolved = sm.resolveStoragePath();
+        assertThat(resolved).isEqualTo(Path.of(System.getProperty("user.home"), ".nexus", "data", "reminders.json"));
+    }
 }

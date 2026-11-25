@@ -67,14 +67,6 @@ public class ReminderStorageManager {
             return SYSTEM_ROOT_PATH;
         }
 
-        if (Files.isReadable(SYSTEM_ROOT_PATH)) {
-            return SYSTEM_ROOT_PATH;
-        }
-
-        if (Files.isReadable(SYSTEM_MIRROR_PATH)) {
-            return SYSTEM_MIRROR_PATH;
-        }
-
         return Path.of(System.getProperty("user.home"), ".nexus", "data", "reminders.json");
     }
 
@@ -165,16 +157,12 @@ public class ReminderStorageManager {
                 Path userPath = Path.of(System.getProperty("user.home"), ".nexus", "data", "reminders.json");
                 return new ArrayList<>(loadFromPathOrFallback(userPath, TimerScope.USER));
             } else {
-                // ALL scopes: merge SYSTEM then USER
-                Map<String, ReminderEvent> merged = new LinkedHashMap<>();
-                for (ReminderEvent e : loadFromPathOrFallback(SYSTEM_ROOT_PATH, TimerScope.SYSTEM)) {
-                    merged.put(e.uuid(), e);
-                }
                 Path userPath = Path.of(System.getProperty("user.home"), ".nexus", "data", "reminders.json");
-                for (ReminderEvent e : loadFromPathOrFallback(userPath, TimerScope.USER)) {
-                    merged.putIfAbsent(e.uuid(), e);
+                if (Files.exists(userPath)) {
+                    return new ArrayList<>(loadFromPathOrFallback(userPath, TimerScope.USER));
                 }
-                return new ArrayList<>(merged.values());
+                // If user-specific file does not exist yet, load system records
+                return new ArrayList<>(loadFromPathOrFallback(SYSTEM_ROOT_PATH, TimerScope.SYSTEM));
             }
         } finally {
             lock.readLock().unlock();

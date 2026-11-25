@@ -65,6 +65,11 @@ public class OverviewScreen implements NexusTuiScreen {
     }
 
     @Override
+    public String getActionShortcuts() {
+        return "[r] Refresh";
+    }
+
+    @Override
     public synchronized void refresh() {
         lastRefreshed = Instant.now();
 

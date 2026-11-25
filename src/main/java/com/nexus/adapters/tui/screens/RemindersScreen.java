@@ -80,6 +80,11 @@ public class RemindersScreen implements NexusTuiScreen {
         return "3: Reminders";
     }
 
+    @Override
+    public String getActionShortcuts() {
+        return "[▲/▼] Nav  │  [c] Create  │  [e] Edit  │  [t] Test  │  [x] Dispatch  │  [d] Delete  │  [f] Filter";
+    }
+
     public FilterMode getCurrentFilter() {
         return currentFilter;
     }
@@ -121,6 +126,11 @@ public class RemindersScreen implements NexusTuiScreen {
 
     @Override
     public synchronized void refresh() {
+        if (toastTimestamp != null && java.time.Duration.between(toastTimestamp, Instant.now()).getSeconds() >= 4) {
+            toastMessage = null;
+            toastTimestamp = null;
+        }
+
         allReminders.clear();
         if (storageManager != null) {
             try {
@@ -314,53 +324,60 @@ public class RemindersScreen implements NexusTuiScreen {
 
         if (selected == null) {
             tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
-            tg.putString(x + 4, y + 2, "No reminder selected. Press [f] to cycle filters or create one via CLI.");
-            return;
+            tg.putString(x + 4, y + 2, "No reminder selected. Press [c] to create or [f] to cycle filters.");
+        } else {
+            int currY = y + 1;
+            String line1 = "Title: " + selected.title() + "  │  Type: " + (selected.type() != null ? selected.type().name() : "N/A")
+                    + "  │  Category: " + (selected.category() != null ? selected.category() : "General");
+            drawInspectorLine(tg, x + 2, currY++, "Event:", line1, width - 4);
+
+            String targetStr = (selected.targetDate() != null ? selected.targetDate().toString() : "N/A")
+                    + (selected.targetTime() != null ? " at " + selected.targetTime().toString() : "")
+                    + " (" + (selected.timezone() != null ? selected.timezone().getId() : "Host Time") + ")"
+                    + "  │  Recurrence: " + (selected.recurrence() != null ? selected.recurrence().format() : "NONE");
+            drawInspectorLine(tg, x + 2, currY++, "Target:", targetStr, width - 4);
+
+            String stateStr = (selected.state() != null && selected.state().status() != null ? selected.state().status() : "UNKNOWN")
+                    + (selected.state() != null && selected.state().activeCycle() != null ? " (Cycle: " + selected.state().activeCycle() + ")" : "")
+                    + "  │  Next Stage: " + (selected.state() != null && selected.state().nextStage() != null ? selected.state().nextStage() : "None")
+                    + (selected.state() != null && selected.state().nextTriggerAt() != null ? " [at " + selected.state().nextTriggerAt() + "]" : "");
+            drawInspectorLine(tg, x + 2, currY++, "Status:", stateStr, width - 4);
+
+            if (height >= 7) {
+                String stagesList = formatDetailedStages(selected);
+                drawInspectorLine(tg, x + 2, currY++, "Stages:", stagesList, width - 4);
+            }
+
+            if (height >= 8 && selected.history() != null) {
+                String historySummary = selected.history().size() + " cycle deliveries recorded in audit history";
+                drawInspectorLine(tg, x + 2, currY++, "History:", historySummary, width - 4);
+            }
         }
 
-        int currY = y + 1;
-        String line1 = "Title: " + selected.title() + "  │  Type: " + (selected.type() != null ? selected.type().name() : "N/A")
-                + "  │  Category: " + (selected.category() != null ? selected.category() : "General");
-        drawInspectorLine(tg, x + 2, currY++, "Event:", line1, width - 4);
-
-        String targetStr = (selected.targetDate() != null ? selected.targetDate().toString() : "N/A")
-                + (selected.targetTime() != null ? " at " + selected.targetTime().toString() : "")
-                + " (" + (selected.timezone() != null ? selected.timezone().getId() : "Host Time") + ")"
-                + "  │  Recurrence: " + (selected.recurrence() != null ? selected.recurrence().format() : "NONE");
-        drawInspectorLine(tg, x + 2, currY++, "Target:", targetStr, width - 4);
-
-        String stateStr = (selected.state() != null && selected.state().status() != null ? selected.state().status() : "UNKNOWN")
-                + (selected.state() != null && selected.state().activeCycle() != null ? " (Cycle: " + selected.state().activeCycle() + ")" : "")
-                + "  │  Next Stage: " + (selected.state() != null && selected.state().nextStage() != null ? selected.state().nextStage() : "None")
-                + (selected.state() != null && selected.state().nextTriggerAt() != null ? " [at " + selected.state().nextTriggerAt() + "]" : "");
-        drawInspectorLine(tg, x + 2, currY++, "Status:", stateStr, width - 4);
-
-        if (height >= 7) {
-            String stagesList = formatDetailedStages(selected);
-            drawInspectorLine(tg, x + 2, currY++, "Stages:", stagesList, width - 4);
-        }
-
-        if (height >= 8 && selected.history() != null) {
-            String historySummary = selected.history().size() + " cycle deliveries recorded in audit history";
-            drawInspectorLine(tg, x + 2, currY++, "History:", historySummary, width - 4);
-        }
-
+        int toastY = y + height - 3;
         int promptY = y + height - 2;
-        if (confirmingDelete) {
+
+        if (confirmingDelete && selected != null) {
             tg.setBackgroundColor(TextColor.ANSI.RED);
             tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT);
             tg.enableModifiers(SGR.BOLD);
             tg.putString(x + 2, promptY, " ⚠ CONFIRM DELETE: Remove reminder " + selected.id() + "? [y] Confirm  [n/ESC] Cancel ");
             tg.clearModifiers();
             tg.setBackgroundColor(TextColor.ANSI.DEFAULT);
-        } else if (toastMessage != null) {
-            tg.setForegroundColor(toastIsError ? TextColor.ANSI.RED_BRIGHT : TextColor.ANSI.GREEN_BRIGHT);
-            tg.enableModifiers(SGR.BOLD);
-            tg.putString(x + 2, promptY, TuiDrawingHelper.truncate(toastMessage, width - 4));
-            tg.clearModifiers();
         } else {
-            tg.setForegroundColor(TextColor.ANSI.BLACK_BRIGHT);
-            String actions = "[▲/▼] Navigate  │  [c] Create  │  [e] Edit  │  [t] Test Alert  │  [x] Dispatch  │  [d] Delete  │  [f] Filter";
+            // Toast row (visible if toastMessage present, without clobbering actions)
+            if (toastMessage != null) {
+                tg.setForegroundColor(toastIsError ? TextColor.ANSI.RED_BRIGHT : TextColor.ANSI.GREEN_BRIGHT);
+                tg.enableModifiers(SGR.BOLD);
+                tg.putString(x + 2, toastY, TuiDrawingHelper.truncate(toastMessage, width - 4));
+                tg.clearModifiers();
+            }
+
+            // Always visible action bar
+            tg.setForegroundColor(TextColor.ANSI.WHITE_BRIGHT);
+            String actions = (selected != null)
+                    ? "[▲/▼] Navigate  │  [c] Create  │  [e] Edit  │  [t] Test Alert  │  [x] Dispatch  │  [d] Delete  │  [f] Filter"
+                    : "[c] Create Reminder  │  [f] Cycle Filters  │  [r] Refresh";
             tg.putString(x + 2, promptY, TuiDrawingHelper.truncate(actions, width - 4));
         }
     }
@@ -515,7 +532,7 @@ public class RemindersScreen implements NexusTuiScreen {
                     toastMessage = "✔ Test alert sent for " + rem.id() + " (" + rem.title() + ")";
                     toastIsError = false;
                 } else {
-                    toastMessage = "❌ Test dispatch failed for " + rem.id();
+                    toastMessage = "❌ Test alert failed. Verify Telegram credentials in server.yaml";
                     toastIsError = true;
                 }
             } catch (Exception e) {
@@ -536,13 +553,18 @@ public class RemindersScreen implements NexusTuiScreen {
         ReminderEvent rem = filteredReminders.get(selectedIndex);
         if (dispatchService != null) {
             try {
-                boolean ok = dispatchService.dispatch(rem.id());
-                if (ok) {
-                    toastMessage = "✔ Dispatched stage for " + rem.id() + " (" + rem.title() + ")";
+                if (rem.state() != null && "COMPLETED".equalsIgnoreCase(rem.state().status())) {
+                    toastMessage = "ℹ Reminder " + rem.id() + " is already COMPLETED. Press [e] to edit date/recurrence.";
                     toastIsError = false;
                 } else {
-                    toastMessage = "❌ Stage dispatch failed for " + rem.id();
-                    toastIsError = true;
+                    boolean ok = dispatchService.dispatch(rem.id());
+                    if (ok) {
+                        toastMessage = "✔ Dispatched stage for " + rem.id() + " (" + rem.title() + ")";
+                        toastIsError = false;
+                    } else {
+                        toastMessage = "❌ Stage dispatch failed for " + rem.id();
+                        toastIsError = true;
+                    }
                 }
             } catch (Exception e) {
                 toastMessage = "❌ Dispatch error: " + e.getMessage();
@@ -589,17 +611,14 @@ public class RemindersScreen implements NexusTuiScreen {
     public void openCreateReminderModal() {
         TuiFormModal modal = new TuiFormModal("Create Milestone Reminder");
         modal.addField(TuiFormModal.FormField.text("title", "Title", ""));
-        modal.addField(TuiFormModal.FormField.options("type", "Type", List.of("BIRTHDAY", "BILL", "EVENT", "TASK"), 0));
+        modal.addField(TuiFormModal.FormField.options("type", "Type", List.of("EVENT", "BIRTHDAY", "ANNIVERSARY", "BILL", "MEETING", "CUSTOM"), 0));
         modal.addField(TuiFormModal.FormField.text("date", "Target Date", LocalDate.now().plusDays(1).toString()));
         modal.addField(TuiFormModal.FormField.text("time", "Target Time", "09:00"));
-        modal.addField(TuiFormModal.FormField.options("recur", "Recurrence", List.of("NONE", "daily", "1w", "1mo", "1y"), 0));
+        modal.addField(TuiFormModal.FormField.options("recur", "Recurrence", List.of("NONE", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"), 0));
         modal.addField(TuiFormModal.FormField.text("stages", "Alert Stages", "7d,3d,1d,0m"));
 
         modal.setOnCancel(() -> {
             this.activeModal = null;
-            this.toastMessage = "Reminder creation cancelled.";
-            this.toastIsError = false;
-            this.toastTimestamp = Instant.now();
         });
 
         modal.setOnSubmit(m -> {
@@ -631,7 +650,7 @@ public class RemindersScreen implements NexusTuiScreen {
                 return;
             }
 
-            ReminderType rType = ReminderType.valueOf(typeStr);
+            ReminderType rType = ReminderType.fromString(typeStr);
             ReminderRecurrence recur = "NONE".equalsIgnoreCase(recurStr) ? ReminderRecurrence.NONE : ReminderRecurrence.fromString(recurStr);
             List<String> stageList = Arrays.stream(stagesStr.split(","))
                     .map(String::trim)
@@ -685,14 +704,14 @@ public class RemindersScreen implements NexusTuiScreen {
         TuiFormModal modal = new TuiFormModal("Edit Reminder: " + existing.id());
         modal.addField(TuiFormModal.FormField.text("title", "Title", existing.title()));
 
-        List<String> typeList = List.of("BIRTHDAY", "BILL", "EVENT", "TASK");
+        List<String> typeList = List.of("EVENT", "BIRTHDAY", "ANNIVERSARY", "BILL", "MEETING", "CUSTOM");
         int typeIdx = existing.type() != null ? typeList.indexOf(existing.type().name()) : 0;
         modal.addField(TuiFormModal.FormField.options("type", "Type", typeList, Math.max(0, typeIdx)));
 
         modal.addField(TuiFormModal.FormField.text("date", "Target Date", existing.targetDate() != null ? existing.targetDate().toString() : ""));
         modal.addField(TuiFormModal.FormField.text("time", "Target Time", existing.targetTime() != null ? existing.targetTime().toString() : "09:00"));
 
-        List<String> recurList = List.of("NONE", "daily", "1w", "1mo", "1y");
+        List<String> recurList = List.of("NONE", "DAILY", "WEEKLY", "MONTHLY", "YEARLY");
         String curRecur = (existing.recurrence() != null && !existing.recurrence().isNone()) ? existing.recurrence().format() : "NONE";
         int recurIdx = recurList.indexOf(curRecur);
         modal.addField(TuiFormModal.FormField.options("recur", "Recurrence", recurList, Math.max(0, recurIdx)));
@@ -704,9 +723,6 @@ public class RemindersScreen implements NexusTuiScreen {
 
         modal.setOnCancel(() -> {
             this.activeModal = null;
-            this.toastMessage = "Edit cancelled.";
-            this.toastIsError = false;
-            this.toastTimestamp = Instant.now();
         });
 
         modal.setOnSubmit(m -> {
@@ -738,7 +754,7 @@ public class RemindersScreen implements NexusTuiScreen {
                 return;
             }
 
-            ReminderType rType = ReminderType.valueOf(typeStr);
+            ReminderType rType = ReminderType.fromString(typeStr);
             ReminderRecurrence recur = "NONE".equalsIgnoreCase(recurStr) ? ReminderRecurrence.NONE : ReminderRecurrence.fromString(recurStr);
             List<String> stageList = Arrays.stream(stagesStr.split(","))
                     .map(String::trim)
