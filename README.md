@@ -150,7 +150,7 @@ When installing on air-gapped hosts, private network infrastructure, or environm
 > - **Guaranteed Idempotency**: Automatically stops running daemons, purges duplicate binaries across standard directories (`/usr/local/bin`, `~/.local/bin`, `/usr/bin`), and ensures a single version is active.
 
 #### Building Debian Packages (.deb)
-To package the native executable into an installable `.deb` package containing the binary, systemd service unit, and default `/etc/nexus/config.yml`:
+To package the native executable into an installable `.deb` package containing the binary and systemd service unit:
 
 ```bash
 ./scripts/package-deb.sh [VERSION]
@@ -368,7 +368,7 @@ Extensive/verbose debug logging can be dynamically enabled in three ways:
    ```bash
    export NEXUS_VERBOSE=true               # Enables verbose logs for all commands in this session
    ```
-3. **YAML Configuration** (`/etc/nexus/config.yml` or `~/.nexus/config.yml`):
+3. **YAML Configuration** (`~/.nexus/config.yml` for user or `/root/.nexus/config.yml` for root):
    ```yaml
    nexus:
      # Set to true for extensive startup benchmarks, bean discovery, and debug traces
@@ -498,7 +498,7 @@ nexus timer delete NX001 --purge-script -y  # Also deletes associated executable
 ```
 
 #### 8. Event & Birthday Reminder Engine (`nexus reminder` / `nx reminder`)
-Nexus includes a native, zero-overhead event and notification milestone scheduler designed for birthdays, recurring bills, anniversaries, and operational routines. It couples atomic JSON persistence (`~/.nexus/data/reminders.json` and system-wide `/root/.nexus/data/reminders.json`, mirrored to world-readable `/etc/nexus/data/reminders.json`) with hardware-level systemd timer wakeups (`Persistent=true`, multi-`OnCalendar` entries per pending stage, 0% CPU idle burn):
+Nexus includes a native, zero-overhead event and notification milestone scheduler designed for birthdays, recurring bills, anniversaries, and operational routines. It couples atomic JSON persistence (`~/.nexus/data/reminders.json` for user scope, `/root/.nexus/data/reminders.json` for system scope) with hardware-level systemd timer wakeups (`Persistent=true`, multi-`OnCalendar` entries per pending stage, 0% CPU idle burn):
 
 - **Multi-Scope Visibility**: `nexus reminder list` displays reminders across all scopes (`--all` default, `--system`, `--user`), letting unprivileged users inspect 24/7 system reminders without requiring `sudo`.
 - **Flexible Recurrence Engine**: Supports arbitrary intervals (`every 45m`, `every 16h`, `every 2d`, `every 3mo`, `every 1y`) alongside standard presets (`NONE`, `DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY` / `ANNUAL`).
@@ -642,7 +642,7 @@ ln -sf ~/.config/fish/completions/nexus.fish ~/.config/fish/completions/nx.fish
 ```
 
 #### 11. Full Host Backup, AES-256-GCM Encryption & Disaster Recovery (`nexus backup` / `nx backup`)
-Nexus features a robust, zero-dependency backup and disaster recovery subsystem designed to safeguard your entire host setup. It packages system configuration (`/etc/nexus/config.yml`), system and user reminders (`data/reminders.json`), recurring timer states (`state/timers.json`), and executable automation scripts (`scripts/`) into portable, authenticated archives:
+Nexus features a robust, zero-dependency backup and disaster recovery subsystem designed to safeguard your entire host setup. It packages system configuration (`/root/.nexus/config.yml`), user configuration (`~/.nexus/config.yml`), reminders (`data/reminders.json`), recurring timer states (`state/timers.json`), and executable automation scripts (`scripts/`) into portable, authenticated archives:
 
 - **Military-Grade AES-256-GCM Encryption**: Uses PBKDF2WithHmacSHA256 key derivation (65,536 iterations, 16-byte random salt, 12-byte random IV) and 128-bit authentication tag with standard magic header `NEXUS_ENC_V1` to protect sensitive configuration, Telegram bot tokens, and custom scripts.
 - **Dynamic Password Resolution**: Passwords can be supplied at runtime (`-p / --password`), via environment variable (`NEXUS_BACKUP_PASSWORD`), in configuration (`nexus.backup.password`), or interactively prompted via masked terminal console.

@@ -63,7 +63,6 @@ mkdir -p "$BUILD_DIR/DEBIAN"
 chmod 755 "$BUILD_DIR/DEBIAN"
 mkdir -p "$BUILD_DIR/usr/local/bin"
 mkdir -p "$BUILD_DIR/lib/systemd/system"
-mkdir -p "$BUILD_DIR/etc/nexus"
 
 # 2. Copy binary
 cp "$BINARY_SRC" "$BUILD_DIR/usr/local/bin/nexus"
@@ -72,31 +71,7 @@ for ALIAS in nx n nxs nexux; do
     ln -sf nexus "$BUILD_DIR/usr/local/bin/$ALIAS"
 done
 
-# 3. Create default configuration template
-cat <<'EOF' > "$BUILD_DIR/etc/nexus/config.yml"
-# ==============================================================================
-# Nexus Host Management Agent Configuration
-# ==============================================================================
-
-nexus:
-  # Operational mode: cli or daemon
-  mode: daemon
-
-  # Default timeout for capabilities (e.g. 30s, 60s)
-  default-timeout: 30s
-
-  # Enable structured file audit logging (logs/nexus-audit.log)
-  audit-enabled: true
-
-  # Remote bi-directional Telegram management
-  telegram:
-    enabled: false
-    bot-token: ""
-    allowed-chat-id: 0
-EOF
-chmod 644 "$BUILD_DIR/etc/nexus/config.yml"
-
-# 4. Create systemd service unit
+# 3. Create systemd service unit
 cat <<'EOF' > "$BUILD_DIR/lib/systemd/system/nexus.service"
 [Unit]
 Description=Nexus Host Management Agent Daemon

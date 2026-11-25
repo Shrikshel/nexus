@@ -418,9 +418,8 @@ public class BackupManager {
         Map<String, Path> map = new LinkedHashMap<>();
 
         if (includeSystem) {
-            addIfExists(map, "system/config.yml", Path.of("/etc/nexus/config.yml"));
-            addIfExists(map, "system/config.yaml", Path.of("/etc/nexus/config.yaml"));
-            addIfExists(map, "system/root-config.yml", Path.of("/root/.nexus/config.yml"));
+            addIfExists(map, "system/config.yml", Path.of("/root/.nexus/config.yml"));
+            addIfExists(map, "system/config.yaml", Path.of("/root/.nexus/config.yaml"));
             addIfExists(map, "system/data/reminders.json", Path.of("/root/.nexus/data/reminders.json"));
             addIfExists(map, "system/state/timers.json", Path.of("/root/.nexus/state/timers.json"));
             addDirectoryFiles(map, "system/scripts", Path.of("/root/.nexus/scripts"));
@@ -458,13 +457,7 @@ public class BackupManager {
         String userHome = System.getProperty("user.home", ".");
         if (archivePath.startsWith("system/")) {
             String sub = archivePath.substring("system/".length());
-            if ("config.yml".equals(sub)) return Path.of("/etc/nexus/config.yml");
-            if ("config.yaml".equals(sub)) return Path.of("/etc/nexus/config.yaml");
-            if ("root-config.yml".equals(sub)) return Path.of("/root/.nexus/config.yml");
-            if (sub.startsWith("data/")) return Path.of("/root/.nexus", sub);
-            if (sub.startsWith("state/")) return Path.of("/root/.nexus", sub);
-            if (sub.startsWith("scripts/")) return Path.of("/root/.nexus", sub);
-            return Path.of("/etc/nexus", sub);
+            return Path.of("/root/.nexus", sub);
         } else if (archivePath.startsWith("user/")) {
             String sub = archivePath.substring("user/".length());
             return Path.of(userHome, ".nexus", sub);

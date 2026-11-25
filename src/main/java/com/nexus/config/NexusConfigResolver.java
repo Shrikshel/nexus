@@ -70,9 +70,7 @@ public final class NexusConfigResolver {
             System.getProperty("user.home") + "/.nexus/config.yaml",
             System.getProperty("user.home") + "/.nexus/config.yml",
             "/root/.nexus/config.yaml",
-            "/root/.nexus/config.yml",
-            "/etc/nexus/config.yaml",
-            "/etc/nexus/config.yml"
+            "/root/.nexus/config.yml"
     );
 
     private NexusConfigResolver() {}
@@ -153,12 +151,6 @@ public final class NexusConfigResolver {
         // If running as root, prefer /root/.nexus/config.yml
         if ("root".equalsIgnoreCase(System.getProperty("user.name"))) {
             return normalize(new File("/root/.nexus/config.yml"));
-        }
-
-        // If /etc/nexus exists and is writable, prefer /etc/nexus/config.yml
-        File etcDir = new File("/etc/nexus");
-        if (etcDir.exists() && etcDir.canWrite()) {
-            return normalize(new File(etcDir, "config.yml"));
         }
 
         // Standard user fallback

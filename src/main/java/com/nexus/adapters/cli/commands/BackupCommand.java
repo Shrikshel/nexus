@@ -107,7 +107,7 @@ public class BackupCommand implements Callable<Integer> {
         @Option(names = {"-p", "--password", "--key"}, description = "Encryption password (or set via NEXUS_BACKUP_PASSWORD)")
         private String password;
 
-        @Option(names = {"--system"}, description = "Include system scope only (root /etc/nexus and /root/.nexus)")
+        @Option(names = {"--system"}, description = "Include system scope only (/root/.nexus)")
         private boolean systemOnly;
 
         @Option(names = {"--user"}, description = "Include user scope only (~/.nexus)")
@@ -309,7 +309,7 @@ public class BackupCommand implements Callable<Integer> {
             boolean restoreUser = !systemOnly;
 
             if (restoreSystem && !isRoot && !dryRun) {
-                err.println("\u001B[31m✗ Error: Restoring system scope (/etc/nexus and /root/.nexus) requires root privileges.\u001B[0m");
+                err.println("\u001B[31m✗ Error: Restoring system scope (/root/.nexus) requires root privileges.\u001B[0m");
                 err.println("  👉 Please run with sudo:");
                 err.println("     sudo nexus backup restore " + archivePath + (rearm ? " --rearm" : ""));
                 err.println("  ℹ Or restore user scope only: nexus backup restore " + archivePath + " --user");

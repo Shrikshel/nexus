@@ -544,8 +544,8 @@ To run Nexus continuously on Linux servers as a systemd background daemon:
    Type=simple
    User=nexus
    Group=nexus
-   ExecStart=/usr/local/bin/nexus -c /etc/nexus/config.yml start
-   ExecStop=/usr/local/bin/nexus stop
+   ExecStart=/usr/local/bin/nexus daemon start
+   ExecStop=/usr/local/bin/nexus daemon stop
    Restart=always
    RestartSec=5s
    TimeoutStopSec=15s

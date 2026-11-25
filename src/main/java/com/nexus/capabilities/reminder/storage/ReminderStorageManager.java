@@ -37,7 +37,6 @@ public class ReminderStorageManager {
     private static final Pattern EVT_NUMBER_PATTERN = Pattern.compile("^EVT-(\\d+)$", Pattern.CASE_INSENSITIVE);
 
     public static final Path SYSTEM_ROOT_PATH = Path.of("/root/.nexus/data/reminders.json");
-    public static final Path SYSTEM_MIRROR_PATH = Path.of("/etc/nexus/data/reminders.json");
 
     private final ObjectMapper objectMapper;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -82,20 +81,8 @@ public class ReminderStorageManager {
             }
         }
 
-        // If SYSTEM scope and unreadable directly, check shared world-readable mirror
+        // If SYSTEM scope and unreadable directly, fallback to sudo -n cat if running as non-root on Linux
         if (scope == TimerScope.SYSTEM) {
-            if (Files.exists(SYSTEM_MIRROR_PATH) && Files.isReadable(SYSTEM_MIRROR_PATH)) {
-                try {
-                    byte[] bytes = Files.readAllBytes(SYSTEM_MIRROR_PATH);
-                    if (bytes.length > 0) {
-                        return parseEvents(bytes, TimerScope.SYSTEM);
-                    }
-                } catch (Exception e) {
-                    log.warn("Could not read reminders from mirror {}: {}", SYSTEM_MIRROR_PATH, e.getMessage());
-                }
-            }
-
-            // Fallback: If running as non-root on Linux, attempt sudo -n cat
             if (!"root".equalsIgnoreCase(System.getProperty("user.name"))) {
                 try {
                     Process p = new ProcessBuilder("sudo", "-n", "cat", path.toString()).start();
@@ -546,15 +533,6 @@ public class ReminderStorageManager {
 
             byte[] bytes = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(root);
             writeAtomicFile(targetFile, bytes);
-
-            // If saving as root in system scope, also maintain a world-readable mirror in /etc/nexus/data/reminders.json
-            if (customStoragePath == null && "root".equalsIgnoreCase(System.getProperty("user.name"))) {
-                try {
-                    writeAtomicFile(SYSTEM_MIRROR_PATH, bytes);
-                } catch (Exception e) {
-                    log.debug("Could not write /etc/nexus mirror: {}", e.getMessage());
-                }
-            }
         } catch (IOException e) {
             log.error("Atomic write failed for {}: {}", targetFile, e.getMessage(), e);
             throw new RuntimeException("Failed to persist reminders atomically: " + e.getMessage(), e);
