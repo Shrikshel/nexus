@@ -19,8 +19,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.regex.Matcher;
@@ -217,6 +220,7 @@ public class ReminderStorageManager {
             String uuid = UUID.randomUUID().toString();
 
             // 3. Determine Timezone
+            // 3. Determine Timezone
             ZoneId zone = req.timezone() != null ? req.timezone() : ZoneId.systemDefault();
             ReminderRecurrence recurrence = req.recurrence() != null ? req.recurrence() : ReminderRecurrence.NONE;
 
@@ -226,8 +230,11 @@ public class ReminderStorageManager {
             meta.putIfAbsent("anchorTime", (req.targetTime() != null ? req.targetTime() : LocalTime.of(9, 0)).toString());
             meta.putIfAbsent("anchorDayOfMonth", req.targetDate().getDayOfMonth());
             meta.putIfAbsent("anchorMonth", req.targetDate().getMonthValue());
+            if (req.type() == ReminderType.BIRTHDAY) {
+                meta.putIfAbsent("birthYear", req.targetDate().getYear());
+            }
 
-            // 5. Build stages
+            // 5. Stage tokens
             List<String> stageTokens = req.stages();
             if (stageTokens == null || stageTokens.isEmpty()) {
                 if (recurrence.isSubDay()) {
@@ -237,30 +244,16 @@ public class ReminderStorageManager {
                 }
             }
 
-            List<ReminderStage> rawStages = StageCalculator.buildStages(
-                    stageTokens, req.targetDate(), req.targetTime(), zone, req.customStageMessages()
+            // 6. Fast-forward past dates for recurring reminders
+            RecurrenceCalculation calc = calculateActiveOccurrence(
+                    req.targetDate(), req.targetTime(), zone, recurrence, stageTokens, req.customStageMessages(), meta, Instant.now()
             );
-            List<ReminderStage> stages = StageCalculator.filterPastStages(rawStages, Instant.now());
 
-            // 6. Initial State & Cycle
-            String cycle;
-            if (recurrence.isSubDay()) {
-                cycle = req.targetDate() + "T" + (req.targetTime() != null ? req.targetTime().toString().substring(0, 5) : "09:00");
-            } else if (recurrence.unit() == ReminderRecurrence.Unit.DAYS || recurrence.unit() == ReminderRecurrence.Unit.WEEKS) {
-                cycle = req.targetDate().toString();
-            } else {
-                cycle = String.valueOf(req.targetDate().getYear());
-            }
-
-            ReminderStage firstUpcoming = stages.stream()
-                    .filter(s -> s.status() == ReminderStageStatus.PENDING)
-                    .findFirst()
-                    .orElse(null);
-
+            ReminderStage firstUpcoming = calc.nextPending();
             String initialNextStage = firstUpcoming != null ? firstUpcoming.stage() : null;
             Instant initialNextTrigger = firstUpcoming != null ? firstUpcoming.triggerAt() : null;
             String status = (firstUpcoming == null && recurrence.isNone()) ? "COMPLETED" : "ACTIVE";
-            ReminderEventState state = new ReminderEventState(cycle, status, null, initialNextStage, initialNextTrigger);
+            ReminderEventState state = new ReminderEventState(calc.cycle(), status, null, initialNextStage, initialNextTrigger);
 
             ReminderEvent newEvent = new ReminderEvent(
                     uuid,
@@ -268,12 +261,12 @@ public class ReminderStorageManager {
                     req.title(),
                     req.type() != null ? req.type() : ReminderType.EVENT,
                     req.category() != null ? req.category() : "GENERAL",
-                    req.targetDate(),
-                    req.targetTime(),
+                    calc.targetDate(),
+                    calc.targetTime(),
                     zone,
                     recurrence,
                     meta,
-                    stages,
+                    calc.stages(),
                     state,
                     Collections.emptyList()
             );
@@ -284,6 +277,66 @@ public class ReminderStorageManager {
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    public record RecurrenceCalculation(
+            LocalDate targetDate,
+            LocalTime targetTime,
+            List<ReminderStage> stages,
+            String cycle,
+            ReminderStage nextPending
+    ) {}
+
+    public RecurrenceCalculation calculateActiveOccurrence(
+            LocalDate requestedDate,
+            LocalTime requestedTime,
+            ZoneId zone,
+            ReminderRecurrence recurrence,
+            List<String> stageTokens,
+            Map<String, String> customStageMessages,
+            Map<String, Object> metadata,
+            Instant now
+    ) {
+        Instant effectiveNow = now != null ? now : Instant.now();
+        LocalTime effectiveTime = requestedTime != null ? requestedTime : LocalTime.of(9, 0);
+        LocalDate activeDate = requestedDate;
+        LocalTime activeTime = effectiveTime;
+
+        if (recurrence != null && !recurrence.isNone()) {
+            LocalDateTime ff = recurrence.fastForward(activeDate, activeTime, zone, metadata, effectiveNow);
+            if (ff != null) {
+                activeDate = ff.toLocalDate();
+                activeTime = ff.toLocalTime();
+            }
+        }
+
+        List<ReminderStage> rawStages = StageCalculator.buildStages(
+                stageTokens, activeDate, activeTime, zone, customStageMessages
+        );
+        List<ReminderStage> stages = StageCalculator.filterPastStages(rawStages, effectiveNow);
+        ReminderStage nextPending = stages.stream()
+                .filter(s -> s.status() == ReminderStageStatus.PENDING)
+                .findFirst()
+                .orElse(null);
+
+        // If recurrence is active but all stages are SKIPPED (e.g. stage tokens were only prior offsets and event is too close),
+        // advance one more occurrence so that future stages are armed.
+        if (nextPending == null && recurrence != null && !recurrence.isNone()) {
+            LocalDateTime nextOcc = recurrence.nextOccurrence(activeDate, activeTime, metadata);
+            if (nextOcc != null && !nextOcc.toLocalDate().isEqual(activeDate)) {
+                activeDate = nextOcc.toLocalDate();
+                activeTime = nextOcc.toLocalTime();
+                rawStages = StageCalculator.buildStages(stageTokens, activeDate, activeTime, zone, customStageMessages);
+                stages = StageCalculator.filterPastStages(rawStages, effectiveNow);
+                nextPending = stages.stream()
+                        .filter(s -> s.status() == ReminderStageStatus.PENDING)
+                        .findFirst()
+                        .orElse(null);
+            }
+        }
+
+        String cycle = (recurrence != null) ? recurrence.formatCycle(activeDate, activeTime) : String.valueOf(activeDate.getYear());
+        return new RecurrenceCalculation(activeDate, activeTime, stages, cycle, nextPending);
     }
 
     public Optional<ReminderEvent> updateReminder(ReminderUpdateRequest req) {
@@ -307,8 +360,8 @@ public class ReminderStorageManager {
             String title = req.newTitle() != null ? req.newTitle() : existing.title();
             ReminderType type = req.newType() != null ? req.newType() : existing.type();
             String category = req.newCategory() != null ? req.newCategory() : existing.category();
-            java.time.LocalDate date = req.newTargetDate() != null ? req.newTargetDate() : existing.targetDate();
-            java.time.LocalTime time = req.newTargetTime() != null ? req.newTargetTime() : existing.targetTime();
+            LocalDate date = req.newTargetDate() != null ? req.newTargetDate() : existing.targetDate();
+            LocalTime time = req.newTargetTime() != null ? req.newTargetTime() : existing.targetTime();
             ZoneId zone = req.newTimezone() != null ? req.newTimezone() : existing.timezone();
             ReminderRecurrence recurrence = req.newRecurrence() != null ? req.newRecurrence() : existing.recurrence();
 
@@ -316,43 +369,31 @@ public class ReminderStorageManager {
             if (req.updateMetadata() != null) {
                 meta.putAll(req.updateMetadata());
             }
+            if (type == ReminderType.BIRTHDAY) {
+                meta.putIfAbsent("birthYear", date.getYear());
+            }
+            meta.putIfAbsent("anchorDate", date.toString());
+            meta.putIfAbsent("anchorTime", (time != null ? time : LocalTime.of(9, 0)).toString());
+            meta.putIfAbsent("anchorDayOfMonth", date.getDayOfMonth());
+            meta.putIfAbsent("anchorMonth", date.getMonthValue());
 
-            // Stages
-            List<ReminderStage> updatedStages;
-            boolean dateOrTimeChanged = (req.newTargetDate() != null && !req.newTargetDate().equals(existing.targetDate()))
-                    || (req.newTargetTime() != null && !req.newTargetTime().equals(existing.targetTime()))
-                    || (req.newTimezone() != null && !req.newTimezone().equals(existing.timezone()));
-
-            if (req.newStages() != null || dateOrTimeChanged) {
-                List<String> tokens = req.newStages() != null ? req.newStages() : existing.stages().stream().map(ReminderStage::stage).toList();
-                Map<String, String> customMsgs = new HashMap<>();
-                for (ReminderStage s : existing.stages()) {
-                    if (s.customMessage() != null) customMsgs.put(s.stage(), s.customMessage());
-                }
-                if (req.updateStageMessages() != null) {
-                    customMsgs.putAll(req.updateStageMessages());
-                }
-                List<ReminderStage> raw = StageCalculator.buildStages(tokens, date, time, zone, customMsgs);
-                updatedStages = StageCalculator.filterPastStages(raw, Instant.now());
-            } else if (req.updateStageMessages() != null) {
-                updatedStages = new ArrayList<>();
-                for (ReminderStage s : existing.stages()) {
-                    String updatedMsg = req.updateStageMessages().getOrDefault(s.stage(), s.customMessage());
-                    updatedStages.add(new ReminderStage(s.stage(), s.offset(), s.triggerAt(), updatedMsg, s.deliveredAt(), s.status()));
-                }
-            } else {
-                updatedStages = existing.stages();
+            List<String> tokens = req.newStages() != null ? req.newStages() : existing.stages().stream().map(ReminderStage::stage).toList();
+            Map<String, String> customMsgs = new HashMap<>();
+            for (ReminderStage s : existing.stages()) {
+                if (s.customMessage() != null) customMsgs.put(s.stage(), s.customMessage());
+            }
+            if (req.updateStageMessages() != null) {
+                customMsgs.putAll(req.updateStageMessages());
             }
 
-            // Update state
-            ReminderStage nextPending = updatedStages.stream()
-                    .filter(s -> s.status() == ReminderStageStatus.PENDING)
-                    .findFirst()
-                    .orElse(null);
+            RecurrenceCalculation calc = calculateActiveOccurrence(
+                    date, time, zone, recurrence, tokens, customMsgs, meta, Instant.now()
+            );
 
+            ReminderStage nextPending = calc.nextPending();
             String status = (nextPending == null && recurrence.isNone()) ? "COMPLETED" : "ACTIVE";
             ReminderEventState newState = new ReminderEventState(
-                    String.valueOf(date.getYear()),
+                    calc.cycle(),
                     status,
                     existing.state().lastDispatchedStage(),
                     nextPending != null ? nextPending.stage() : null,
@@ -365,12 +406,12 @@ public class ReminderStorageManager {
                     title,
                     type,
                     category,
-                    date,
-                    time,
+                    calc.targetDate(),
+                    calc.targetTime(),
                     zone,
                     recurrence,
                     meta,
-                    updatedStages,
+                    calc.stages(),
                     newState,
                     existing.history()
             );
@@ -409,7 +450,58 @@ public class ReminderStorageManager {
         if (event == null || !"ACTIVE".equalsIgnoreCase(event.state().status())) {
             return event;
         }
-        List<ReminderStage> filtered = StageCalculator.filterPastStages(event.stages(), now);
+        Instant effectiveNow = now != null ? now : Instant.now();
+
+        // 1. Auto-advance recurring events whose target date has passed or whose stages are all skipped
+        if (!event.recurrence().isNone()) {
+            boolean allSkippedOrPast = event.stages().stream().noneMatch(s -> s.status() == ReminderStageStatus.PENDING);
+            boolean dateInPast = ZonedDateTime.of(
+                    event.targetDate(),
+                    event.targetTime() != null ? event.targetTime() : LocalTime.of(9, 0),
+                    event.timezone() != null ? event.timezone() : ZoneId.systemDefault()
+            ).toInstant().isBefore(effectiveNow.minusSeconds(30));
+
+            if (allSkippedOrPast || dateInPast) {
+                Map<String, Object> meta = new LinkedHashMap<>(event.metadata());
+                if (event.type() == ReminderType.BIRTHDAY) {
+                    meta.putIfAbsent("birthYear", event.targetDate().getYear());
+                }
+                meta.putIfAbsent("anchorDate", event.targetDate().toString());
+                meta.putIfAbsent("anchorTime", (event.targetTime() != null ? event.targetTime() : LocalTime.of(9, 0)).toString());
+                meta.putIfAbsent("anchorMonth", event.targetDate().getMonthValue());
+                meta.putIfAbsent("anchorDayOfMonth", event.targetDate().getDayOfMonth());
+
+                List<String> tokens = event.stages().stream().map(ReminderStage::stage).toList();
+                Map<String, String> customMsgs = new HashMap<>();
+                for (ReminderStage s : event.stages()) {
+                    if (s.customMessage() != null) customMsgs.put(s.stage(), s.customMessage());
+                }
+
+                RecurrenceCalculation calc = calculateActiveOccurrence(
+                        event.targetDate(), event.targetTime(), event.timezone(), event.recurrence(),
+                        tokens, customMsgs, meta, effectiveNow
+                );
+
+                ReminderStage nextPending = calc.nextPending();
+                ReminderEventState newState = new ReminderEventState(
+                        calc.cycle(),
+                        "ACTIVE",
+                        event.state().lastDispatchedStage(),
+                        nextPending != null ? nextPending.stage() : null,
+                        nextPending != null ? nextPending.triggerAt() : null
+                );
+
+                ReminderEvent healed = new ReminderEvent(
+                        event.uuid(), event.id(), event.title(), event.type(), event.category(),
+                        calc.targetDate(), calc.targetTime(), event.timezone(), event.recurrence(),
+                        meta, calc.stages(), newState, event.history()
+                );
+                saveEvent(healed);
+                return healed;
+            }
+        }
+
+        List<ReminderStage> filtered = StageCalculator.filterPastStages(event.stages(), effectiveNow);
         boolean changed = false;
         for (int i = 0; i < filtered.size(); i++) {
             if (filtered.get(i).status() != event.stages().get(i).status()) {
@@ -436,6 +528,41 @@ public class ReminderStorageManager {
         ReminderEvent reconciled = event.withUpdatedState(newState, filtered);
         saveEvent(reconciled);
         return reconciled;
+    }
+
+    /**
+     * Inspects all events and heals any recurring active reminders whose cycle has elapsed or is stalled with no pending alerts.
+     */
+    public int autoHealRecurringReminders() {
+        lock.writeLock().lock();
+        try {
+            List<ReminderEvent> all = loadAll();
+            int healedCount = 0;
+            Instant now = Instant.now();
+            for (int i = 0; i < all.size(); i++) {
+                ReminderEvent e = all.get(i);
+                if ("ACTIVE".equalsIgnoreCase(e.state().status()) && !e.recurrence().isNone()) {
+                    boolean allSkipped = e.stages().stream().noneMatch(s -> s.status() == ReminderStageStatus.PENDING);
+                    boolean dateInPast = ZonedDateTime.of(
+                            e.targetDate(),
+                            e.targetTime() != null ? e.targetTime() : LocalTime.of(9, 0),
+                            e.timezone() != null ? e.timezone() : ZoneId.systemDefault()
+                    ).toInstant().isBefore(now.minusSeconds(30));
+
+                    if (allSkipped || dateInPast) {
+                        ReminderEvent healed = reconcileEvent(e, now);
+                        all.set(i, healed);
+                        healedCount++;
+                    }
+                }
+            }
+            if (healedCount > 0) {
+                saveAllAtomic(all);
+            }
+            return healedCount;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     public boolean deleteByIdOrUuid(String identifier) {

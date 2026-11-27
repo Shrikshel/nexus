@@ -134,6 +134,7 @@ public class RemindersScreen implements NexusTuiScreen {
         allReminders.clear();
         if (storageManager != null) {
             try {
+                storageManager.autoHealRecurringReminders();
                 allReminders.addAll(storageManager.loadAll());
             } catch (Exception ignored) {}
         }
@@ -329,6 +330,14 @@ public class RemindersScreen implements NexusTuiScreen {
             int currY = y + 1;
             String line1 = "Title: " + selected.title() + "  │  Type: " + (selected.type() != null ? selected.type().name() : "N/A")
                     + "  │  Category: " + (selected.category() != null ? selected.category() : "General");
+            if (selected.metadata().containsKey("birthYear")) {
+                Object by = selected.metadata().get("birthYear");
+                try {
+                    int birthYear = Integer.parseInt(by.toString().trim());
+                    int age = (selected.targetDate() != null ? selected.targetDate().getYear() : LocalDate.now().getYear()) - birthYear;
+                    line1 += "  │  Age: " + age + " (b. " + birthYear + ")";
+                } catch (Exception ignored) {}
+            }
             drawInspectorLine(tg, x + 2, currY++, "Event:", line1, width - 4);
 
             String targetStr = (selected.targetDate() != null ? selected.targetDate().toString() : "N/A")

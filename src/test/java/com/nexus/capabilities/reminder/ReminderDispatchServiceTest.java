@@ -129,9 +129,10 @@ class ReminderDispatchServiceTest {
     @Test
     @DisplayName("Rolls over recurring event across recurrence interval (MONTHLY)")
     void testMonthlyRecurrenceRollover() {
+        LocalDate baseDate = LocalDate.now().plusMonths(1);
         ReminderCreateRequest req = new ReminderCreateRequest(
                 "EVT-BILL", "Monthly Rent", ReminderType.BILL, "FINANCE",
-                LocalDate.of(2026, 11, 1), LocalTime.of(9, 0), ZoneId.of("Asia/Kolkata"),
+                baseDate, LocalTime.of(9, 0), ZoneId.of("Asia/Kolkata"),
                 ReminderRecurrence.MONTHLY, List.of("0m"), Collections.emptyMap(), Collections.emptyMap()
         );
         storageManager.createReminder(req);
@@ -139,10 +140,10 @@ class ReminderDispatchServiceTest {
         dispatchService.dispatch("EVT-BILL");
 
         ReminderEvent rolledOver = storageManager.findByIdOrUuid("EVT-BILL").orElseThrow();
-        assertThat(rolledOver.targetDate()).isEqualTo(LocalDate.of(2026, 12, 1));
+        assertThat(rolledOver.targetDate()).isEqualTo(baseDate.plusMonths(1));
         assertThat(rolledOver.state().status()).isEqualTo("ACTIVE");
         assertThat(rolledOver.history()).hasSize(1);
-        assertThat(rolledOver.history().get(0).targetDate()).isEqualTo(LocalDate.of(2026, 11, 1));
+        assertThat(rolledOver.history().get(0).targetDate()).isEqualTo(baseDate);
 
         // Timers rearms for new target date
         verify(schedulerProvider, times(1)).armTimer(any(ReminderEvent.class));
@@ -191,9 +192,10 @@ class ReminderDispatchServiceTest {
     @Test
     @DisplayName("Rolls over sub-day recurring event advancing both date and clock (EVERY 16h)")
     void testSubDayRecurrenceRollover() {
+        LocalDate baseDate = LocalDate.now().plusDays(2);
         ReminderCreateRequest req = new ReminderCreateRequest(
                 "EVT-SHIFT", "Shift Handover", ReminderType.EVENT, "WORK",
-                LocalDate.of(2026, 11, 24), LocalTime.of(18, 0), ZoneId.of("Asia/Kolkata"),
+                baseDate, LocalTime.of(18, 0), ZoneId.of("Asia/Kolkata"),
                 ReminderRecurrence.fromString("every 16h"), List.of("0m"), Collections.emptyMap(), Collections.emptyMap()
         );
         storageManager.createReminder(req);
@@ -201,12 +203,13 @@ class ReminderDispatchServiceTest {
         dispatchService.dispatch("EVT-SHIFT");
 
         ReminderEvent rolledOver = storageManager.findByIdOrUuid("EVT-SHIFT").orElseThrow();
-        assertThat(rolledOver.targetDate()).isEqualTo(LocalDate.of(2026, 11, 25));
+        LocalDate expectedNextDate = baseDate.plusDays(1);
+        assertThat(rolledOver.targetDate()).isEqualTo(expectedNextDate);
         assertThat(rolledOver.targetTime()).isEqualTo(LocalTime.of(10, 0));
         assertThat(rolledOver.state().status()).isEqualTo("ACTIVE");
-        assertThat(rolledOver.state().activeCycle()).isEqualTo("2026-11-25T10:00");
+        assertThat(rolledOver.state().activeCycle()).isEqualTo(expectedNextDate + "T10:00");
         assertThat(rolledOver.history()).hasSize(1);
-        assertThat(rolledOver.history().get(0).targetDate()).isEqualTo(LocalDate.of(2026, 11, 24));
+        assertThat(rolledOver.history().get(0).targetDate()).isEqualTo(baseDate);
 
         verify(schedulerProvider, times(1)).armTimer(any(ReminderEvent.class));
     }

@@ -262,4 +262,93 @@ class ReminderStorageManagerTest {
         Path resolved = sm.resolveStoragePath();
         assertThat(resolved).isEqualTo(Path.of(System.getProperty("user.home"), ".nexus", "data", "reminders.json"));
     }
+
+    @Test
+    @DisplayName("Auto fast-forwards past-date birthday reminders and captures birthYear")
+    void testCreateBirthdayWithPastDateAutoFastForwardsAndCapturesBirthYear() {
+        ReminderCreateRequest req = new ReminderCreateRequest(
+                "EVT-SUVARNA", "Suvarna", ReminderType.BIRTHDAY, "General",
+                LocalDate.of(2000, 3, 5), LocalTime.of(0, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.YEARLY, List.of("7d", "3d", "1d", "0m"), Collections.emptyMap(),
+                Collections.emptyMap()
+        );
+
+        ReminderEvent created = storageManager.createReminder(req);
+
+        assertThat(created.title()).isEqualTo("Suvarna");
+        assertThat(created.type()).isEqualTo(ReminderType.BIRTHDAY);
+        assertThat(created.metadata().get("birthYear")).isEqualTo(2000);
+        assertThat(created.metadata().get("anchorDate")).isEqualTo("2000-03-05");
+        assertThat(created.metadata().get("anchorMonth")).isEqualTo(3);
+        assertThat(created.metadata().get("anchorDayOfMonth")).isEqualTo(5);
+
+        // Target date must be fast-forwarded to upcoming occurrence
+        assertThat(created.targetDate().getYear()).isGreaterThanOrEqualTo(LocalDate.now().getYear());
+        assertThat(created.targetDate().getMonthValue()).isEqualTo(3);
+        assertThat(created.targetDate().getDayOfMonth()).isEqualTo(5);
+
+        // Stages must be armed and pending
+        assertThat(created.stages()).hasSize(4);
+        assertThat(created.stages().stream().allMatch(s -> s.status() == ReminderStageStatus.PENDING)).isTrue();
+        assertThat(created.state().status()).isEqualTo("ACTIVE");
+        assertThat(created.state().nextStage()).isEqualTo("7d");
+        assertThat(created.state().nextTriggerAt()).isNotNull();
+        assertThat(created.state().nextTriggerAt()).isAfter(java.time.Instant.now());
+        assertThat(created.state().activeCycle()).isEqualTo(String.valueOf(created.targetDate().getYear()));
+    }
+
+    @Test
+    @DisplayName("Auto-heals existing stuck recurring reminders that have past cycle and skipped stages")
+    void testAutoHealStuckPastRecurringReminder() {
+        // Construct an unhealed event matching the user's exact reported bug
+        List<ReminderStage> skippedStages = List.of(
+                new ReminderStage("7d", "-P7D", java.time.Instant.parse("2000-02-27T00:00:00Z"), null, null, ReminderStageStatus.SKIPPED),
+                new ReminderStage("3d", "-P3D", java.time.Instant.parse("2000-03-02T00:00:00Z"), null, null, ReminderStageStatus.SKIPPED),
+                new ReminderStage("1d", "-P1D", java.time.Instant.parse("2000-03-04T00:00:00Z"), null, null, ReminderStageStatus.SKIPPED),
+                new ReminderStage("0m", "PT0S", java.time.Instant.parse("2000-03-05T00:00:00Z"), null, null, ReminderStageStatus.SKIPPED)
+        );
+        ReminderEventState stuckState = new ReminderEventState("2000", "ACTIVE", null, null, null);
+        ReminderEvent stuckEvent = new ReminderEvent(
+                "stuck-uuid-1", "EVT-STUCK", "Suvarna", ReminderType.BIRTHDAY, "General",
+                LocalDate.of(2000, 3, 5), LocalTime.of(0, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.YEARLY, Collections.emptyMap(),
+                skippedStages, stuckState, Collections.emptyList()
+        );
+        storageManager.saveEvent(stuckEvent);
+
+        int healedCount = storageManager.autoHealRecurringReminders();
+        assertThat(healedCount).isEqualTo(1);
+
+        ReminderEvent healed = storageManager.findByIdOrUuid("EVT-STUCK").orElseThrow();
+        assertThat(healed.metadata().get("birthYear")).isEqualTo(2000);
+        assertThat(healed.targetDate().getYear()).isGreaterThanOrEqualTo(LocalDate.now().getYear());
+        assertThat(healed.state().status()).isEqualTo("ACTIVE");
+        assertThat(healed.state().nextStage()).isEqualTo("7d");
+        assertThat(healed.state().nextTriggerAt()).isNotNull();
+        assertThat(healed.state().activeCycle()).isEqualTo(String.valueOf(healed.targetDate().getYear()));
+        assertThat(healed.stages().stream().allMatch(s -> s.status() == ReminderStageStatus.PENDING)).isTrue();
+    }
+
+    @Test
+    @DisplayName("Handles leap-year past dates preserving Feb 29 anchor")
+    void testCreateLeapYearBirthdayPastDate() {
+        ReminderCreateRequest req = new ReminderCreateRequest(
+                "EVT-LEAP", "Leap Baby", ReminderType.BIRTHDAY, "General",
+                LocalDate.of(2000, 2, 29), LocalTime.of(12, 0), ZoneId.of("Asia/Kolkata"),
+                ReminderRecurrence.YEARLY, List.of("0m"), Collections.emptyMap(), Collections.emptyMap()
+        );
+
+        ReminderEvent created = storageManager.createReminder(req);
+        assertThat(created.metadata().get("birthYear")).isEqualTo(2000);
+        assertThat(created.metadata().get("anchorMonth")).isEqualTo(2);
+        assertThat(created.metadata().get("anchorDayOfMonth")).isEqualTo(29);
+
+        // Upcoming target must be either Feb 28 (non-leap) or Feb 29 (leap)
+        assertThat(created.targetDate().getMonthValue()).isEqualTo(2);
+        if (created.targetDate().isLeapYear()) {
+            assertThat(created.targetDate().getDayOfMonth()).isEqualTo(29);
+        } else {
+            assertThat(created.targetDate().getDayOfMonth()).isEqualTo(28);
+        }
+    }
 }

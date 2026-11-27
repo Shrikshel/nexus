@@ -201,14 +201,7 @@ public class ReminderDispatchService {
                     stageTokens, nextDate, nextTime, event.timezone(), customMsgs
             );
 
-            String nextCycle;
-            if (event.recurrence().isSubDay()) {
-                nextCycle = nextDateTime.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm"));
-            } else if (event.recurrence().unit() == ReminderRecurrence.Unit.DAYS || event.recurrence().unit() == ReminderRecurrence.Unit.WEEKS) {
-                nextCycle = nextDate.format(DateTimeFormatter.ISO_LOCAL_DATE);
-            } else {
-                nextCycle = String.valueOf(nextDate.getYear());
-            }
+            String nextCycle = event.recurrence().formatCycle(nextDate, nextTime);
 
             ReminderStage firstStage = nextStages.isEmpty() ? null : nextStages.get(0);
             ReminderEventState nextState = event.state().withNewCycle(

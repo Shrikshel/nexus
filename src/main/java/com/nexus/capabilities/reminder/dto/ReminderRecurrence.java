@@ -3,10 +3,14 @@ package com.nexus.capabilities.reminder.dto;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
@@ -146,6 +150,40 @@ public class ReminderRecurrence {
     }
 
     /**
+     * Resolves anchor day of month from metadata or fallback date.
+     */
+    public static int resolveAnchorDay(LocalDate date, Map<String, Object> metadata) {
+        if (metadata != null) {
+            Object d = metadata.get("anchorDayOfMonth");
+            if (d instanceof Number num) {
+                return num.intValue();
+            } else if (d != null) {
+                try {
+                    return Integer.parseInt(d.toString());
+                } catch (Exception ignored) {}
+            }
+        }
+        return date != null ? date.getDayOfMonth() : 1;
+    }
+
+    /**
+     * Resolves anchor month value from metadata or fallback date.
+     */
+    public static int resolveAnchorMonth(LocalDate date, Map<String, Object> metadata) {
+        if (metadata != null) {
+            Object m = metadata.get("anchorMonth");
+            if (m instanceof Number num) {
+                return num.intValue();
+            } else if (m != null) {
+                try {
+                    return Integer.parseInt(m.toString());
+                } catch (Exception ignored) {}
+            }
+        }
+        return date != null ? date.getMonthValue() : 1;
+    }
+
+    /**
      * Calculates the next occurrence timestamp preserving calendar anchors (leap year, month-end).
      */
     public LocalDateTime nextOccurrence(LocalDate currentDate, LocalTime currentTime, Map<String, Object> metadata) {
@@ -158,26 +196,8 @@ public class ReminderRecurrence {
         }
 
         // Resolve calendar anchor points (day of month & month) to guarantee leap-year and month-end stability
-        int anchorDay = currentDate.getDayOfMonth();
-        int anchorMonth = currentDate.getMonthValue();
-        if (metadata != null) {
-            Object d = metadata.get("anchorDayOfMonth");
-            if (d instanceof Number num) {
-                anchorDay = num.intValue();
-            } else if (d != null) {
-                try {
-                    anchorDay = Integer.parseInt(d.toString());
-                } catch (Exception ignored) {}
-            }
-            Object m = metadata.get("anchorMonth");
-            if (m instanceof Number num) {
-                anchorMonth = num.intValue();
-            } else if (m != null) {
-                try {
-                    anchorMonth = Integer.parseInt(m.toString());
-                } catch (Exception ignored) {}
-            }
-        }
+        int anchorDay = resolveAnchorDay(currentDate, metadata);
+        int anchorMonth = resolveAnchorMonth(currentDate, metadata);
 
         return switch (unit) {
             case MINUTES -> {
@@ -213,6 +233,126 @@ public class ReminderRecurrence {
             }
             case NONE -> LocalDateTime.of(currentDate, effectiveTime);
         };
+    }
+
+    /**
+     * Fast-forwards past dates to the current or upcoming cycle occurrence.
+     * Preserves calendar anchors and leap-year stability.
+     */
+    public LocalDateTime fastForward(LocalDate currentDate, LocalTime currentTime, ZoneId zone, Map<String, Object> metadata, Instant now) {
+        if (currentDate == null) {
+            return null;
+        }
+        LocalTime effectiveTime = currentTime != null ? currentTime : LocalTime.of(9, 0);
+        if (unit == Unit.NONE) {
+            return LocalDateTime.of(currentDate, effectiveTime);
+        }
+
+        ZoneId effectiveZone = zone != null ? zone : ZoneId.systemDefault();
+        Instant threshold = now != null ? now.minusSeconds(30) : Instant.now().minusSeconds(30);
+
+        ZonedDateTime currentZdt = ZonedDateTime.of(currentDate, effectiveTime, effectiveZone);
+        if (!currentZdt.toInstant().isBefore(threshold)) {
+            return LocalDateTime.of(currentDate, effectiveTime);
+        }
+
+        ZonedDateTime nowZdt = (now != null ? now : Instant.now()).atZone(effectiveZone);
+        LocalDate dateCursor = currentDate;
+        LocalTime timeCursor = effectiveTime;
+
+        int anchorDay = resolveAnchorDay(currentDate, metadata);
+        int anchorMonth = resolveAnchorMonth(currentDate, metadata);
+
+        switch (unit) {
+            case YEARS -> {
+                int yearDiff = nowZdt.getYear() - dateCursor.getYear();
+                if (yearDiff > 0) {
+                    int steps = (yearDiff / amount) * amount;
+                    int candidateYear = dateCursor.getYear() + steps;
+                    YearMonth ym = YearMonth.of(candidateYear, anchorMonth);
+                    int maxDay = ym.lengthOfMonth();
+                    dateCursor = ym.atDay(Math.min(anchorDay, maxDay));
+                }
+            }
+            case MONTHS -> {
+                long monthsDiff = java.time.temporal.ChronoUnit.MONTHS.between(
+                        YearMonth.from(dateCursor), YearMonth.from(nowZdt.toLocalDate())
+                );
+                if (monthsDiff > 0) {
+                    long steps = (monthsDiff / amount) * amount;
+                    YearMonth ym = YearMonth.from(dateCursor).plusMonths(steps);
+                    int maxDay = ym.lengthOfMonth();
+                    dateCursor = ym.atDay(Math.min(anchorDay, maxDay));
+                }
+            }
+            case WEEKS -> {
+                long weeksDiff = java.time.temporal.ChronoUnit.WEEKS.between(dateCursor, nowZdt.toLocalDate());
+                if (weeksDiff > 0) {
+                    long steps = (weeksDiff / amount) * amount;
+                    dateCursor = dateCursor.plusWeeks(steps);
+                }
+            }
+            case DAYS -> {
+                long daysDiff = java.time.temporal.ChronoUnit.DAYS.between(dateCursor, nowZdt.toLocalDate());
+                if (daysDiff > 0) {
+                    long steps = (daysDiff / amount) * amount;
+                    dateCursor = dateCursor.plusDays(steps);
+                }
+            }
+            case HOURS -> {
+                Duration dur = Duration.between(ZonedDateTime.of(dateCursor, timeCursor, effectiveZone), nowZdt);
+                long hoursDiff = dur.toHours();
+                if (hoursDiff > 0) {
+                    long steps = (hoursDiff / amount) * amount;
+                    LocalDateTime ldt = LocalDateTime.of(dateCursor, timeCursor).plusHours(steps);
+                    dateCursor = ldt.toLocalDate();
+                    timeCursor = ldt.toLocalTime();
+                }
+            }
+            case MINUTES -> {
+                Duration dur = Duration.between(ZonedDateTime.of(dateCursor, timeCursor, effectiveZone), nowZdt);
+                long minsDiff = dur.toMinutes();
+                if (minsDiff > 0) {
+                    long steps = (minsDiff / amount) * amount;
+                    LocalDateTime ldt = LocalDateTime.of(dateCursor, timeCursor).plusMinutes(steps);
+                    dateCursor = ldt.toLocalDate();
+                    timeCursor = ldt.toLocalTime();
+                }
+            }
+            default -> {}
+        }
+
+        // Advance step-by-step if still before threshold (handles clock time edge cases)
+        int safetyLimit = 0;
+        while (ZonedDateTime.of(dateCursor, timeCursor, effectiveZone).toInstant().isBefore(threshold) && safetyLimit < 500) {
+            LocalDateTime next = nextOccurrence(dateCursor, timeCursor, metadata);
+            if (next == null || (next.toLocalDate().isEqual(dateCursor) && next.toLocalTime().equals(timeCursor))) {
+                break;
+            }
+            dateCursor = next.toLocalDate();
+            timeCursor = next.toLocalTime();
+            safetyLimit++;
+        }
+
+        return LocalDateTime.of(dateCursor, timeCursor);
+    }
+
+    /**
+     * Canonical cycle formatter for active state tracking.
+     */
+    public String formatCycle(LocalDate date, LocalTime time) {
+        if (unit == Unit.NONE) {
+            return date != null ? String.valueOf(date.getYear()) : "UNKNOWN";
+        }
+        if (isSubDay()) {
+            return date + "T" + (time != null ? time.toString().substring(0, 5) : "09:00");
+        } else if (unit == Unit.DAYS || unit == Unit.WEEKS) {
+            return date != null ? date.toString() : "UNKNOWN";
+        } else if (unit == Unit.MONTHS) {
+            return date != null ? date.getYear() + "-" + String.format("%02d", date.getMonthValue()) : "UNKNOWN";
+        } else {
+            return date != null ? String.valueOf(date.getYear()) : "UNKNOWN";
+        }
     }
 
     /**
